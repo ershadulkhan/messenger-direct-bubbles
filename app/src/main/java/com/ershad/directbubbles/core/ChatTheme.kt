@@ -149,6 +149,14 @@ object Themes {
         tv.setTextColor(if (outgoing) t.outText else t.inText)
     }
 
+    /** Bubble container with message text and its time ("06:11 pm") inside. */
+    fun styleBubble(bubble: View, text: TextView, time: TextView?, t: ChatTheme, outgoing: Boolean) {
+        bubble.background = bubbleDrawable(bubble.context, t, outgoing)
+        val c = if (outgoing) t.outText else t.inText
+        text.setTextColor(c)
+        time?.setTextColor(c)
+    }
+
     /** Header (title bar) of a chat. */
     fun styleHeader(header: View, t: ChatTheme, title: TextView, sub: TextView?, icons: List<ImageView>) {
         header.setBackgroundColor(t.titleBar)

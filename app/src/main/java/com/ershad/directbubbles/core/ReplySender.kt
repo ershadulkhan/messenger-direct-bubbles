@@ -13,19 +13,29 @@ import android.util.Log
 object ReplySender {
     private const val TAG = "ReplySender"
 
-    /** Sends [text] through the app's own notification Reply action (RemoteInput). */
+    /**
+     * Sends [text] through the app's own notification Reply action (RemoteInput) — exactly what
+     * tapping "Reply" in the notification shade does, so it works with WhatsApp/Instagram closed,
+     * app-locked, or the phone locked.
+     *
+     * Why replies failed before (Android 14+): the reply was delivered as a *background* broadcast.
+     * Android 14's new broadcast queue defers background broadcasts to cached/frozen apps, so a
+     * frozen WhatsApp/Instagram only received the reply much later (or never). FLAG_RECEIVER_FOREGROUND
+     * delivers it immediately, like the system notification shade does.
+     */
     fun send(ctx: Context, action: Notification.Action, text: String): Boolean {
         val inputs = action.remoteInputs ?: return false
         if (inputs.isEmpty()) return false
+        val pi = action.actionIntent ?: return false
         return try {
-            val intent = Intent().addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+            val intent = Intent().addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_FOREGROUND)
             val bundle = Bundle()
             for (remoteInput in inputs) {
                 bundle.putCharSequence(remoteInput.resultKey, text)
             }
             RemoteInput.addResultsToIntent(inputs, intent, bundle)
             RemoteInput.setResultsSource(intent, RemoteInput.SOURCE_FREE_FORM_INPUT)
-            action.actionIntent.send(ctx, 0, intent)
+            pi.send(ctx, 0, intent, null, null, null, senderOptions())
             true
         } catch (e: Exception) {
             Log.w(TAG, "reply failed", e)
@@ -33,9 +43,18 @@ object ReplySender {
         }
     }
 
+    /** Android 14+: let the target app use our (visible overlay's) privileges, as DirectChat does. */
+    @Suppress("DEPRECATION")
+    private fun senderOptions(): Bundle? {
+        if (Build.VERSION.SDK_INT < 34) return null
+        val o = ActivityOptions.makeBasic()
+        o.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+        return o.toBundle()
+    }
+
     /** Presses a simple notification button (e.g. "Mark as read"). */
-    fun fire(action: Notification.Action): Boolean = try {
-        action.actionIntent.send()
+    fun fire(ctx: Context, action: Notification.Action): Boolean = try {
+        action.actionIntent.send(ctx, 0, Intent().addFlags(Intent.FLAG_RECEIVER_FOREGROUND), null, null, null, senderOptions())
         true
     } catch (e: Exception) {
         Log.w(TAG, "action failed", e)

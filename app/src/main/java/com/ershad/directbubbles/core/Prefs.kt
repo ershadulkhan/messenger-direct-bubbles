@@ -31,6 +31,46 @@ object Prefs {
         sp(c).edit().putBoolean("bubble_left", left).putInt("bubble_y", y).apply()
     }
 
+    // ---------- Preferences screen (global) ----------
+
+    private fun b(c: Context, k: String, d: Boolean) = sp(c).getBoolean(k, d)
+    private fun setB(c: Context, k: String, v: Boolean) = sp(c).edit().putBoolean(k, v).apply()
+
+    /** Clear the app's notification as soon as its ChatHead appears. */
+    fun clearOnAppear(c: Context) = b(c, "clear_on_appear", false)
+    fun setClearOnAppear(c: Context, v: Boolean) = setB(c, "clear_on_appear", v)
+
+    /** Clear the app's notification when its ChatHead is closed. */
+    fun clearOnRemoved(c: Context) = b(c, "clear_on_removed", false)
+    fun setClearOnRemoved(c: Context, v: Boolean) = setB(c, "clear_on_removed", v)
+
+    /** When the app's notification disappears (read elsewhere), reset that chat's unread counter. */
+    fun clearUnreadWithNotif(c: Context) = b(c, "clear_unread_with_notif", false)
+    fun setClearUnreadWithNotif(c: Context, v: Boolean) = setB(c, "clear_unread_with_notif", v)
+
+    fun messagePreview(c: Context) = b(c, "msg_preview", true)
+    fun setMessagePreview(c: Context, v: Boolean) = setB(c, "msg_preview", v)
+
+    /** Seconds, 1..10 */
+    fun previewTimeout(c: Context): Int = sp(c).getInt("preview_timeout", 3).coerceIn(1, 10)
+    fun setPreviewTimeout(c: Context, v: Int) = sp(c).edit().putInt("preview_timeout", v.coerceIn(1, 10)).apply()
+
+    fun instantReply(c: Context) = b(c, "instant_reply", true)
+    fun setInstantReply(c: Context, v: Boolean) = setB(c, "instant_reply", v)
+
+    /** dp, 40..80 */
+    fun bubbleSize(c: Context): Int = sp(c).getInt("bubble_size", 64).coerceIn(40, 80)
+    fun setBubbleSize(c: Context, v: Int) = sp(c).edit().putInt("bubble_size", v.coerceIn(40, 80)).apply()
+
+    fun rememberPosition(c: Context) = b(c, "remember_pos", true)
+    fun setRememberPosition(c: Context, v: Boolean) = setB(c, "remember_pos", v)
+
+    fun closeOnAppLaunch(c: Context) = b(c, "close_on_launch", false)
+    fun setCloseOnAppLaunch(c: Context, v: Boolean) = setB(c, "close_on_launch", v)
+
+    fun use24h(c: Context) = b(c, "use_24h", false)
+    fun setUse24h(c: Context, v: Boolean) = setB(c, "use_24h", v)
+
     // ---------- per-app settings ----------
 
     fun autoMarkRead(c: Context, pkg: String): Boolean = sp(c).getBoolean("mark_read_$pkg", false)

@@ -11,6 +11,7 @@ import android.widget.TextView
 import com.ershad.directbubbles.R
 import com.ershad.directbubbles.core.AppIcons
 import com.ershad.directbubbles.core.Avatars
+import com.ershad.directbubbles.core.ActivityItem
 import com.ershad.directbubbles.core.ChatMessage
 import com.ershad.directbubbles.core.ChatTheme
 import com.ershad.directbubbles.core.Conversation
@@ -78,21 +79,30 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
         val prev = items.getOrNull(position - 1)
         val next = items.getOrNull(position + 1)
 
+        // Date chip ("Today", "07 Nov") when the day changes.
         val header = v.findViewById<TextView>(R.id.msg_time_header)
-        if (prev == null || m.time - prev.time > 10 * 60_000L) {
+        if (prev == null || !TimeFmt.sameDay(prev.time, m.time)) {
             header.visibility = View.VISIBLE
-            header.text = TimeFmt.full(ctx, m.time)
+            header.text = TimeFmt.day(m.time)
         } else {
             header.visibility = View.GONE
         }
         val msgText = v.findViewById<TextView>(R.id.msg_text)
-        msgText.text = m.text
+        val isCall = m.kind == ChatMessage.KIND_CALL
+        msgText.text = if (isCall) {
+            (if (m.text.contains("video", true)) "📹  " else "📞  ") + m.text
+        } else m.text
+        // Exact time inside every bubble: "06:11 pm" (or 18:11 with 24-hour time).
+        val timeTv = v.findViewById<TextView>(R.id.msg_time)
+        timeTv.text = TimeFmt.time(ctx, m.time) + if (m.outgoing && m.status == ChatMessage.STATUS_OK) " ✓" else ""
+        val bubble = v.findViewById<View>(R.id.msg_bubble)
         val t = theme
         if (t != null) {
-            Themes.styleBubble(msgText, t, m.outgoing)
+            Themes.styleBubble(bubble, msgText, timeTv, t, m.outgoing)
             header.setTextColor(Themes.subtleOn(t.chatBg))
             if (!m.outgoing) v.findViewById<TextView>(R.id.msg_sender).setTextColor(Themes.subtleOn(t.chatBg))
         }
+        if (isCall && m.text.startsWith("Missed")) msgText.setTextColor(ctx.getColor(R.color.unread_red))
 
         if (m.outgoing) {
             val status = v.findViewById<TextView>(R.id.msg_status)
@@ -122,6 +132,33 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
                 senderTv.visibility = View.GONE
             }
         }
+        return v
+    }
+}
+
+/** Instagram Activity tab: new instants, stories, follows, follow requests... */
+class ActivityAdapter(private val ctx: Context) : BaseAdapter() {
+    private var items: List<ActivityItem> = emptyList()
+
+    fun setData(list: List<ActivityItem>) {
+        items = list
+        notifyDataSetChanged()
+    }
+
+    override fun getCount(): Int = items.size
+    override fun getItem(position: Int): ActivityItem = items[position]
+    override fun getItemId(position: Int): Long = position.toLong()
+
+    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+        val v = convertView ?: LayoutInflater.from(ctx).inflate(R.layout.item_activity, parent, false)
+        val a = items[position]
+        v.findViewById<ImageView>(R.id.act_avatar).setImageBitmap(a.avatar ?: AppIcons.big(ctx, a.pkg))
+        val title = v.findViewById<TextView>(R.id.act_title)
+        title.text = a.title
+        title.setTypeface(null, if (a.unread) Typeface.BOLD else Typeface.NORMAL)
+        v.findViewById<TextView>(R.id.act_text).text = a.text
+        v.findViewById<TextView>(R.id.act_time).text = TimeFmt.short(ctx, a.time)
+        v.findViewById<View>(R.id.act_dot).visibility = if (a.unread) View.VISIBLE else View.GONE
         return v
     }
 }

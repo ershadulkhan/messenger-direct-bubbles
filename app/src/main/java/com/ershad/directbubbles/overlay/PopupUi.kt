@@ -32,6 +32,7 @@ import com.ershad.directbubbles.core.ChatStore
 import com.ershad.directbubbles.core.Prefs
 import com.ershad.directbubbles.core.ReplySender
 import com.ershad.directbubbles.core.Themes
+import com.ershad.directbubbles.service.BubbleNotificationListener
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -55,6 +56,10 @@ class PopupUi(
     private val inboxContainer: View = root.findViewById(R.id.inbox_container)
     private val inboxList: ListView = root.findViewById(R.id.inbox_list)
     private val inboxEmpty: TextView = root.findViewById(R.id.inbox_empty)
+    private val inboxTabs: View = root.findViewById(R.id.inbox_tabs)
+    private val tabChats: TextView = root.findViewById(R.id.tab_chats)
+    private val tabActivity: TextView = root.findViewById(R.id.tab_activity)
+    private val tabClear: TextView = root.findViewById(R.id.tab_clear)
 
     private val threadContainer: View = root.findViewById(R.id.thread_container)
     private val threadHeader: View = root.findViewById(R.id.thread_header)
@@ -77,6 +82,9 @@ class PopupUi(
     private val ghost: ImageView = root.findViewById(R.id.drag_ghost)
 
     private val inboxAdapter = InboxAdapter(ctx)
+    private val activityAdapter = ActivityAdapter(ctx)
+    /** Instagram inbox: false = Chats tab, true = Activity tab. */
+    private var showingActivity = false
     private val threadAdapter = ThreadAdapter(ctx)
     /** Open person's chat, or null when an app inbox is showing. */
     private var currentKey: String? = null
@@ -106,9 +114,14 @@ class PopupUi(
         btnSend.setOnClickListener { send() }
 
         inboxList.setOnItemClickListener { _, _, position, _ ->
-            showThread(inboxAdapter.getItem(position).key)
+            if (showingActivity) openActivity(activityAdapter.getItem(position))
+            else showThread(inboxAdapter.getItem(position).key)
         }
+        tabChats.setOnClickListener { showingActivity = false; refresh() }
+        tabActivity.setOnClickListener { showingActivity = true; refresh() }
+        tabClear.setOnClickListener { currentInboxPkg?.let { ChatStore.clearActivity(it) } }
         inboxList.setOnItemLongClickListener { _, _, position, _ ->
+            if (showingActivity) return@setOnItemLongClickListener false
             val c = inboxAdapter.getItem(position)
             ChatStore.delete(c.key)
             Toast.makeText(ctx.applicationContext, "Removed chat with ${c.title} from this app", Toast.LENGTH_SHORT).show()
@@ -135,7 +148,7 @@ class PopupUi(
     }
 
     @Suppress("DEPRECATION")
-    fun attach(key: String?) {
+    fun attach(key: String?, focusInput: Boolean = false) {
         root.animate().cancel()
         panel.animate().cancel()
         root.alpha = 1f
@@ -163,7 +176,11 @@ class PopupUi(
             headsScroll.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.heads_enter))
         }
         attached = true
-        if (key != null && ChatStore.get(key) != null) showThread(key) else showInbox(null)
+        if (key != null && ChatStore.get(key) != null) {
+            showThread(key)
+            // Instant Reply: keyboard up, ready to type.
+            if (focusInput) input.post { focusInput() }
+        } else showInbox(null)
     }
 
     fun detach(onDone: () -> Unit) {
@@ -200,10 +217,33 @@ class PopupUi(
             val label = AppIcons.label(ctx, pkg)
             val list = ChatStore.all().filter { it.pkg == pkg }   // only this app's chats
             inboxTitle.text = label
-            inboxEmpty.text = "No $label chats yet.\nNew $label messages will appear here."
-            inboxAdapter.setData(list)
-            inboxEmpty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
-            inboxList.visibility = if (list.isEmpty()) View.GONE else View.VISIBLE
+            val hasActivityTab = pkg in com.ershad.directbubbles.core.NotificationParser.ACTIVITY_APPS
+            if (!hasActivityTab) showingActivity = false
+            inboxTabs.visibility = if (hasActivityTab) View.VISIBLE else View.GONE
+            val empty: Boolean
+            if (showingActivity) {
+                val acts = ChatStore.activityFor(pkg)
+                if (inboxList.adapter !== activityAdapter) inboxList.adapter = activityAdapter
+                activityAdapter.setData(acts)
+                empty = acts.isEmpty()
+                inboxEmpty.text = "No $label activity yet.\nNew instants, stories, follows and follow requests appear here."
+                tabClear.visibility = if (empty) View.GONE else View.VISIBLE
+                ChatStore.markActivityRead(pkg)
+            } else {
+                if (inboxList.adapter !== inboxAdapter) inboxList.adapter = inboxAdapter
+                inboxAdapter.setData(list)
+                empty = list.isEmpty()
+                inboxEmpty.text = "No $label chats yet.\nNew $label messages will appear here."
+                tabClear.visibility = View.GONE
+            }
+            if (hasActivityTab) {
+                styleTab(tabChats, !showingActivity)
+                val n = ChatStore.unreadActivity(pkg)
+                tabActivity.text = if (n > 0 && !showingActivity) "Activity · $n" else "Activity"
+                styleTab(tabActivity, showingActivity)
+            }
+            inboxEmpty.visibility = if (empty) View.VISIBLE else View.GONE
+            inboxList.visibility = if (empty) View.GONE else View.VISIBLE
             topArrow.imageTintList = android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.panel_bg))
         } else {
             val c = ChatStore.get(key)
@@ -222,7 +262,7 @@ class PopupUi(
             threadAdapter.setData(c)
             // Auto Mark as Read (per app): press the app's own "Mark as read" button when you view new messages.
             if (c.unread > 0 && Prefs.autoMarkRead(ctx, c.pkg)) {
-                c.markReadAction?.let { ReplySender.fire(it) }
+                c.markReadAction?.let { ReplySender.fire(ctx.applicationContext, it) }
                 c.markReadAction = null
             }
             ChatStore.markRead(c)
@@ -263,7 +303,7 @@ class PopupUi(
             val v = inflater.inflate(R.layout.item_head, headsRow, false)
             v.findViewById<ImageView>(R.id.head_avatar).setImageBitmap(AppIcons.big(ctx, pkg))
             v.findViewById<View>(R.id.head_badge).visibility = View.GONE
-            val unread = ChatStore.all().any { it.pkg == pkg && it.unread > 0 }
+            val unread = ChatStore.all().any { it.pkg == pkg && it.unread > 0 } || ChatStore.unreadActivity(pkg) > 0
             v.findViewById<View>(R.id.head_dot).visibility = if (unread) View.VISIBLE else View.GONE
             val selected = currentKey == null && currentInboxPkg == pkg
             v.findViewById<View>(R.id.head_ring).visibility = if (selected) View.VISIBLE else View.INVISIBLE
@@ -325,6 +365,7 @@ class PopupUi(
     private fun showInbox(pkg: String?) {
         hideKeyboard()
         val switching = currentKey != null || (pkg != null && pkg != currentInboxPkg)
+        if (pkg != null && pkg != currentInboxPkg) showingActivity = false
         if (pkg != null) currentInboxPkg = pkg
         else if (currentInboxPkg == null) currentInboxPkg = platforms().first()
         currentKey = null
@@ -350,7 +391,7 @@ class PopupUi(
 
     /** Closes one person's chat head (history stays in the inbox). */
     private fun closeHead(key: String) {
-        ChatStore.setActive(key, false)
+        OverlayController.closeChat(key)
         // The app inbox bubbles stay, so the popup stays open on that app's inbox.
         if (currentKey == key) showInbox(ChatStore.get(key)?.pkg) else refresh()
     }
@@ -479,21 +520,64 @@ class PopupUi(
         val text = input.text.toString().trim()
         if (text.isEmpty()) return
         val c = ChatStore.get(currentKey) ?: return
-        val action = c.replyAction
+        // Cached reply button for this chat; if missing, look for a fresh one in the notification shade.
+        val action = c.replyAction ?: BubbleNotificationListener.freshReplyFor(c)?.also { c.replyAction = it }
         if (action == null) {
-            Toast.makeText(ctx.applicationContext, "Can't reply yet. Wait for their next message, or open the app.", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                ctx.applicationContext,
+                "No reply button for this chat right now. It comes back with their next message, or open the app.",
+                Toast.LENGTH_LONG
+            ).show()
             return
         }
         // 1) Show my message immediately, 2) send it through Instagram/WhatsApp's own reply action.
         val m = ChatStore.addOutgoing(c, text)
         input.setText("")
-        val ok = ReplySender.send(ctx.applicationContext, action, text)
+        var ok = ReplySender.send(ctx.applicationContext, action, text)
+        if (!ok) {
+            // The cached button expired: retry once with a fresh one from the shade.
+            val fresh = BubbleNotificationListener.freshReplyFor(c)
+            if (fresh != null && fresh !== action) {
+                c.replyAction = fresh
+                ok = ReplySender.send(ctx.applicationContext, fresh, text)
+            }
+        }
         m.status = if (ok) ChatMessage.STATUS_OK else ChatMessage.STATUS_FAILED
         if (!ok) {
             c.replyAction = null
-            Toast.makeText(ctx.applicationContext, "Not sent. Open the app to reply.", Toast.LENGTH_LONG).show()
+            Toast.makeText(ctx.applicationContext, "Not sent — the reply button expired. Open the app to reply.", Toast.LENGTH_LONG).show()
         }
         ChatStore.notifyChanged()
+    }
+
+    private fun styleTab(tab: TextView, selected: Boolean) {
+        val bg = GradientDrawable()
+        bg.cornerRadius = 17 * density
+        if (selected) {
+            bg.setColor(ctx.getColor(R.color.brand_blue))
+            tab.setTextColor(android.graphics.Color.WHITE)
+        } else {
+            bg.setColor(ctx.getColor(R.color.surface))
+            tab.setTextColor(ctx.getColor(R.color.text_primary))
+        }
+        tab.background = bg
+    }
+
+    /** Activity item tapped: open it in the app (its own notification action), else launch the app. */
+    private fun openActivity(a: com.ershad.directbubbles.core.ActivityItem) {
+        val appCtx = ctx.applicationContext
+        onCollapse()
+        if (!ReplySender.open(appCtx, a.contentIntent, a.pkg)) {
+            Toast.makeText(appCtx, "Couldn't open ${AppIcons.label(appCtx, a.pkg)}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun focusInput() {
+        input.requestFocus()
+        try {
+            ctx.getSystemService(InputMethodManager::class.java)?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        } catch (_: Exception) {
+        }
     }
 
     private fun openInApp() {
@@ -502,6 +586,8 @@ class PopupUi(
         onCollapse()
         val ok = if (c.simulated) ReplySender.launchApp(appCtx, c.pkg)
         else ReplySender.open(appCtx, c.contentIntent, c.pkg)
+        // Preferences → Close ChatHeads on app launch.
+        if (ok && Prefs.closeOnAppLaunch(appCtx)) OverlayController.closeChat(c.key, clearNotifications = false)
         if (!ok) {
             val msg = if (c.simulated) "This is a test chat (${AppIcons.label(appCtx, c.pkg)} isn't installed)"
             else "Couldn't open ${AppIcons.label(appCtx, c.pkg)}"

@@ -4,196 +4,110 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/window_bg"
-    android:clipToPadding="false">
+    android:clipToPadding="false"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="18dp">
+        android:orientation="vertical">
 
-        <!-- Header -->
-        <LinearLayout
+        <!-- Hero header with the overlapping "Test ChatHead" avatar -->
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingTop="8dp"
-            android:paddingBottom="18dp">
+            android:layout_height="wrap_content">
 
             <ImageView
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:contentDescription="App icon"
-                android:src="@mipmap/ic_launcher" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/app_name"
-                    android:textColor="@color/text_primary"
-                    android:textSize="24sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Messenger-style chat heads for Instagram &amp; WhatsApp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Step 1: Notification access -->
-        <LinearLayout style="@style/Card">
-
-            <TextView
-                style="@style/CardTitle"
-                android:text="1 · Notification access" />
-
-            <TextView
-                android:id="@+id/status_notif"
-                style="@style/CardBody" />
-
-            <LinearLayout
+                android:id="@+id/hero_bg"
                 android:layout_width="match_parent"
+                android:layout_height="190dp"
+                android:contentDescription="@null"
+                android:scaleType="fitXY"
+                android:src="@drawable/bg_hero" />
+
+            <TextView
+                android:id="@+id/hero_title"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
+                android:layout_marginStart="20dp"
+                android:layout_marginTop="16dp"
+                android:text="@string/app_name"
+                android:textColor="#FFFFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
 
-                <Button
-                    android:id="@+id/btn_notif"
-                    style="@style/SmallButton"
-                    android:text="Grant access" />
+            <FrameLayout
+                android:id="@+id/btn_test"
+                android:layout_width="136dp"
+                android:layout_height="136dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="120dp"
+                android:contentDescription="Test ChatHead">
 
-                <Button
-                    android:id="@+id/btn_app_info"
-                    style="@style/SmallButton"
-                    android:layout_marginStart="8dp"
-                    android:text="App info" />
-            </LinearLayout>
+                <ImageView
+                    android:layout_width="136dp"
+                    android:layout_height="136dp"
+                    android:background="@drawable/bg_avatar_ring"
+                    android:contentDescription="@null"
+                    android:elevation="6dp"
+                    android:padding="6dp"
+                    android:src="@mipmap/ic_launcher" />
 
-            <TextView
-                style="@style/CardHint"
-                android:text="Switch greyed out (Android 13+)? Tap App info → ⋮ (top-right) → Allow restricted settings, then come back and grant access." />
-        </LinearLayout>
-
-        <!-- Step 2: Overlay -->
-        <LinearLayout style="@style/Card">
-
-            <TextView
-                style="@style/CardTitle"
-                android:text="2 · Display over other apps" />
-
-            <TextView
-                android:id="@+id/status_overlay"
-                style="@style/CardBody" />
-
-            <Button
-                android:id="@+id/btn_overlay"
-                style="@style/SmallButton"
-                android:layout_marginTop="10dp"
-                android:text="Allow" />
-        </LinearLayout>
-
-        <!-- Android 13+: notification permission for the quick-access panel entry -->
-        <LinearLayout
-            android:id="@+id/card_post"
-            style="@style/Card">
-
-            <TextView
-                style="@style/CardTitle"
-                android:text="Test notifications (optional)" />
-
-            <TextView
-                android:id="@+id/status_post"
-                style="@style/CardBody" />
-
-            <Button
-                android:id="@+id/btn_post"
-                style="@style/SmallButton"
-                android:layout_marginTop="10dp"
-                android:text="Allow" />
-        </LinearLayout>
-
-        <!-- Apps -->
-        <LinearLayout style="@style/Card">
-
-            <TextView
-                style="@style/CardTitle"
-                android:text="Apps &amp; chat settings" />
-
-            <TextView
-                android:id="@+id/apps_summary"
-                style="@style/CardBody" />
-
-            <!-- One row per app: tap for Auto Mark as Read, Themes and Filters -->
-            <LinearLayout
-                android:id="@+id/apps_list"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:orientation="vertical" />
-
-            <Button
-                android:id="@+id/btn_apps"
-                style="@style/SmallButton"
-                android:layout_marginTop="10dp"
-                android:text="Choose apps" />
-
-            <Switch
-                android:id="@+id/switch_bubbles"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="Show floating chat bubbles"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <!-- Test -->
-        <TextView
-            android:id="@+id/btn_test"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/bg_button_primary"
-            android:foreground="?android:attr/selectableItemBackground"
-            android:gravity="center"
-            android:text="Test Messenger Bubbles &amp; Inbox"
-            android:textColor="#FFFFFFFF"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="bottom|end"
+                    android:layout_marginEnd="6dp"
+                    android:layout_marginBottom="6dp"
+                    android:background="@drawable/bg_add_badge"
+                    android:contentDescription="@null"
+                    android:elevation="8dp"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_add" />
+            </FrameLayout>
+        </FrameLayout>
 
         <TextView
-            android:id="@+id/btn_open_inbox"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
             android:layout_marginTop="10dp"
-            android:background="@drawable/bg_button_secondary"
-            android:foreground="?android:attr/selectableItemBackground"
-            android:gravity="center"
-            android:text="Open chat inbox"
-            android:textColor="@color/brand_blue"
-            android:textSize="15sp"
-            android:textStyle="bold" />
+            android:text="Test ChatHead"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp" />
 
         <TextView
-            style="@style/CardHint"
-            android:layout_marginTop="18dp"
-            android:text="Private by design: this app has no internet permission. Messages are read from your notifications and stay on this phone. It uses no battery while idle — Android wakes it only when a message notification arrives.\n\nVivo / OriginOS tip: if bubbles stop after a while, open App info → Battery and allow background activity." />
+            android:id="@+id/status_chip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_status_chip"
+            android:foreground="?android:attr/selectableItemBackground"
+            android:paddingStart="14dp"
+            android:paddingTop="7dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="7dp"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <!-- Tiles -->
+        <GridLayout
+            android:id="@+id/tiles"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="22dp"
+            android:columnCount="3" />
 
         <TextView
             android:id="@+id/version_text"
-            style="@style/CardHint"
-            android:layout_marginTop="8dp"
-            android:gravity="center" />
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:layout_marginBottom="24dp"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
     </LinearLayout>
 </ScrollView>

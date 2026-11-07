@@ -33,6 +33,18 @@
         </activity>
 
         <activity
+            android:name=".settings.PreferencesActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".settings.AppsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".settings.PermissionsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".settings.AppSettingsActivity"
             android:exported="false" />
 

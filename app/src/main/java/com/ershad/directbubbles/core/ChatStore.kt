@@ -17,14 +17,17 @@ import java.util.concurrent.Executors
 import kotlin.math.abs
 
 /**
- * Lightweight local chat cache. Lives in memory, saved as one small JSON file
- * (plus one tiny PNG per profile picture). Every method must be called on the main thread.
+ * Lightweight local chat cache. Lives in memory; each chat is saved to its own small JSON file,
+ * and only chats that actually changed are written (keeps CPU + battery use minimal).
+ * Every method must be called on the main thread.
  */
 object ChatStore {
     private const val TAG = "ChatStore"
-    private const val MAX_MESSAGES = 300
+    private const val MAX_MESSAGES = 250
     private const val MAX_CONVERSATIONS = 60
-    private const val MAX_SEEN = 400
+    private const val MAX_SEEN = 300
+    private const val MAX_ACTIVITY = 80
+    private const val SAVE_DELAY_MS = 2500L
 
     /** One message pulled out of a notification. */
     class Item(
@@ -35,6 +38,7 @@ object ChatStore {
         val sender: String?,
         /** True when the app gave no exact timestamp (plain notifications): use looser duplicate checks. */
         val loose: Boolean,
+        val kind: Int = ChatMessage.KIND_TEXT,
     )
 
     /** Everything one notification tells us about one conversation. */
@@ -49,9 +53,15 @@ object ChatStore {
         val reply: Notification.Action?,
         val content: PendingIntent?,
         val markRead: Notification.Action? = null,
+        /** StatusBarNotification.key of the source notification. */
+        val sbnKey: String? = null,
     )
 
     private val convs = HashMap<String, Conversation>()
+    private val activity = ArrayList<ActivityItem>()
+    private var activityDirty = false
+    /** notification key -> conversation key */
+    private val notifIndex = HashMap<String, String>()
     private val listeners = ArrayList<() -> Unit>()
     private var app: Context? = null
     private val io = Executors.newSingleThreadExecutor()
@@ -76,15 +86,30 @@ object ChatStore {
 
     fun totalUnread(): Int = convs.values.filter { it.active }.sumOf { it.unread }
 
-    /** Adds what a notification contains. Returns how many NEW incoming messages were added. */
+    /** Finds an existing chat of [pkg] whose name matches [title] (used for calls). */
+    fun findByTitle(pkg: String, title: String): Conversation? {
+        val t = normalize(title)
+        return convs.values.filter { it.pkg == pkg && normalize(it.title) == t }.maxByOrNull { it.lastTime }
+    }
+
+    fun normalize(s: String): String = s.trim().lowercase().replace(Regex("\\s+"), " ")
+
+    fun convKeyForNotification(sbnKey: String): String? = notifIndex[sbnKey]
+
+    private fun touch(c: Conversation) {
+        c.dirty = true
+    }
+
+    /** Adds what a notification contains. Returns how many NEW incoming text messages were added. */
     fun ingest(b: Batch): Int {
         val c = convs.getOrPut(b.key) { Conversation(b.key, b.pkg, b.title) }
-        if (b.title.isNotBlank()) c.title = b.title
+        if (b.title.isNotBlank() && c.title != b.title) {
+            c.title = b.title
+            touch(c)
+        }
         c.isGroup = b.isGroup
         c.simulated = b.simulated
-        if (b.reply != null) c.replyAction = b.reply
-        if (b.content != null) c.contentIntent = b.content
-        if (b.markRead != null) c.markReadAction = b.markRead
+        attach(c, b)
         val newAvatar = b.avatar
         if (newAvatar != null) {
             val old = c.avatar
@@ -105,6 +130,21 @@ object ChatStore {
                 val echo = recent.any { m -> m.outgoing && m.text == it.text && abs(m.time - it.time) < 10 * 60_000L }
                 if (echo) continue
                 c.messages.add(ChatMessage(it.text, it.time, true))
+            } else if (it.kind == ChatMessage.KIND_CALL) {
+                // One call entry per call (call notifications are re-posted while ringing).
+                val dup = recent.any { m -> m.kind == ChatMessage.KIND_CALL && abs(m.time - it.time) < 3 * 60_000L }
+                if (dup) {
+                    // Upgrade "Audio call" -> "Missed voice call" when the call is missed.
+                    val idx = c.messages.indexOfLast { m -> m.kind == ChatMessage.KIND_CALL && abs(m.time - it.time) < 3 * 60_000L }
+                    if (idx >= 0 && it.text.startsWith("Missed") && !c.messages[idx].text.startsWith("Missed")) {
+                        val old = c.messages[idx]
+                        c.messages[idx] = ChatMessage(it.text, old.time, false, null, ChatMessage.STATUS_OK, ChatMessage.KIND_CALL)
+                        c.unread++
+                    }
+                    continue
+                }
+                c.messages.add(ChatMessage(it.text, it.time, false, null, ChatMessage.STATUS_OK, ChatMessage.KIND_CALL))
+                if (it.text.startsWith("Missed")) c.unread++
             } else {
                 val window = if (it.loose) 10 * 60_000L else 1_500L
                 val dup = recent.any { m -> !m.outgoing && m.text == it.text && m.sender == it.sender && abs(m.time - it.time) < window }
@@ -115,20 +155,48 @@ object ChatStore {
             }
             if (it.time > c.lastTime) c.lastTime = it.time
         }
-        // Keep chronological order (apps sometimes deliver older messages later).
-        if (changed) c.messages.sortBy { it.time }
+        if (changed) {
+            c.messages.sortBy { it.time }
+            touch(c)
+        }
         while (c.messages.size > MAX_MESSAGES) c.messages.removeAt(0)
         while (c.seen.size > MAX_SEEN) c.seen.remove(c.seen.first())
         if (added > 0) c.active = true
         trimConversations()
-        notifyChanged()
+        if (changed) notifyChanged() else notifyListenersOnly()
         return added
+    }
+
+    /** Refreshes only the live reply / open / mark-read buttons of a chat (no new messages). */
+    fun attachActions(b: Batch) {
+        val c = convs[b.key] ?: return
+        attach(c, b)
+    }
+
+    private fun attach(c: Conversation, b: Batch) {
+        if (b.reply != null) c.replyAction = b.reply
+        if (b.content != null) c.contentIntent = b.content
+        if (b.markRead != null) c.markReadAction = b.markRead
+        val k = b.sbnKey
+        if (k != null) {
+            c.notifKeys.add(k)
+            notifIndex[k] = c.key
+        }
+    }
+
+    /** The source notification disappeared. Returns the chat it belonged to. */
+    fun onNotificationGone(sbnKey: String): Conversation? {
+        val key = notifIndex.remove(sbnKey) ?: return null
+        val c = convs[key] ?: return null
+        c.notifKeys.remove(sbnKey)
+        return c
     }
 
     fun addOutgoing(c: Conversation, text: String): ChatMessage {
         val m = ChatMessage(text, System.currentTimeMillis(), true, null, ChatMessage.STATUS_SENDING)
         c.messages.add(m)
         c.lastTime = m.time
+        touch(c)
         notifyChanged()
         return m
     }
@@ -136,6 +204,7 @@ object ChatStore {
     fun markRead(c: Conversation) {
         if (c.unread > 0) {
             c.unread = 0
+            touch(c)
             notifyChanged()
         }
     }
@@ -145,6 +214,7 @@ object ChatStore {
         val c = convs[key] ?: return
         if (c.active != on) {
             c.active = on
+            touch(c)
             notifyChanged()
         }
     }
@@ -153,6 +223,7 @@ object ChatStore {
         var any = false
         for (c in convs.values) if (c.active) {
             c.active = false
+            touch(c)
             any = true
         }
         if (any) notifyChanged()
@@ -160,12 +231,69 @@ object ChatStore {
 
     fun delete(key: String) {
         if (convs.remove(key) != null) {
-            deleteAvatar(key)
+            deleteFiles(key)
             notifyChanged()
         }
     }
 
+    /** Home → Clear History. */
+    fun clearAll() {
+        for (k in ArrayList(convs.keys)) deleteFiles(k)
+        convs.clear()
+        notifIndex.clear()
+        activity.clear()
+        activityDirty = true
+        notifyChanged()
+    }
+
+    // ---------------- activity feed (Instagram: instants, follows, requests...) ----------------
+
+    fun activityFor(pkg: String): List<ActivityItem> = activity.filter { it.pkg == pkg }.sortedByDescending { it.time }
+
+    fun unreadActivity(pkg: String): Int = activity.count { it.pkg == pkg && it.unread }
+
+    fun addActivity(item: ActivityItem): Boolean {
+        val dup = activity.any {
+            it.pkg == item.pkg && it.title == item.title && it.text == item.text && abs(it.time - item.time) < 30 * 60_000L
+        }
+        if (dup) return false
+        activity.add(item)
+        while (activity.size > MAX_ACTIVITY) {
+            val oldest = activity.minByOrNull { it.time } ?: break
+            activity.remove(oldest)
+        }
+        activityDirty = true
+        notifyChanged()
+        return true
+    }
+
+    fun markActivityRead(pkg: String) {
+        var any = false
+        for (a in activity) if (a.pkg == pkg && a.unread) {
+            a.unread = false
+            any = true
+        }
+        if (any) {
+            activityDirty = true
+            notifyChanged()
+        }
+    }
+
+    fun clearActivity(pkg: String) {
+        activity.removeAll { it.pkg == pkg }
+        activityDirty = true
+        notifyChanged()
+    }
+
+    // ---------------- change notification ----------------
+
     fun notifyChanged() {
+        notifyListenersOnly()
+        main.removeCallbacks(saveRunnable)
+        main.postDelayed(saveRunnable, SAVE_DELAY_MS)
+    }
+
+    private fun notifyListenersOnly() {
         for (l in ArrayList(listeners)) {
             try {
                 l()
@@ -173,8 +301,6 @@ object ChatStore {
                 Log.w(TAG, "listener failed", t)
             }
         }
-        main.removeCallbacks(saveRunnable)
-        main.postDelayed(saveRunnable, 800)
     }
 
     private fun trimConversations() {
@@ -182,7 +308,7 @@ object ChatStore {
         val extra = convs.values.sortedBy { it.lastTime }.take(convs.size - MAX_CONVERSATIONS)
         for (c in extra) {
             convs.remove(c.key)
-            deleteAvatar(c.key)
+            deleteFiles(c.key)
         }
     }
 
@@ -190,9 +316,13 @@ object ChatStore {
 
     private fun dir(): File = File(app!!.filesDir, "chats").apply { mkdirs() }
 
-    private fun dataFile() = AtomicFile(File(dir(), "chats.json"))
+    private fun id(key: String) = Integer.toHexString(key.hashCode())
 
-    private fun avatarFile(key: String) = File(dir(), "a_" + Integer.toHexString(key.hashCode()) + ".png")
+    private fun convFile(key: String) = AtomicFile(File(dir(), "c_" + id(key) + ".json"))
+
+    private fun avatarFile(key: String) = File(dir(), "a_" + id(key) + ".png")
+
+    private fun activityFile() = AtomicFile(File(dir(), "activity.json"))
 
     private fun saveAvatar(key: String, bmp: Bitmap) {
         if (app == null) return
@@ -206,80 +336,134 @@ object ChatStore {
         }
     }
 
-    private fun deleteAvatar(key: String) {
+    private fun deleteFiles(key: String) {
         if (app == null) return
-        val f = avatarFile(key)
-        io.execute { f.delete() }
+        val a = avatarFile(key)
+        val c = convFile(key)
+        io.execute {
+            a.delete()
+            c.delete()
+        }
     }
 
     private fun load() {
         try {
-            val f = dataFile()
-            if (!f.baseFile.exists()) return
-            val json = JSONObject(String(f.readFully(), Charsets.UTF_8))
-            val arr = json.optJSONArray("convs") ?: return
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val c = Conversation(o.getString("key"), o.getString("pkg"), o.optString("title"))
-                c.isGroup = o.optBoolean("group")
-                c.simulated = o.optBoolean("sim")
-                c.unread = o.optInt("unread")
-                c.lastTime = o.optLong("last")
-                c.active = o.optBoolean("active")
-                o.optJSONArray("msgs")?.let { ms ->
-                    for (j in 0 until ms.length()) {
-                        val m = ms.getJSONObject(j)
-                        val st = m.optInt("st")
-                        c.messages.add(
-                            ChatMessage(
-                                m.getString("t"), m.getLong("ts"), m.optBoolean("o"),
-                                if (m.has("s")) m.getString("s") else null,
-                                if (st == ChatMessage.STATUS_FAILED) st else ChatMessage.STATUS_OK
-                            )
-                        )
+            // Older versions kept everything in one big file: migrate it once.
+            val legacy = AtomicFile(File(dir(), "chats.json"))
+            if (legacy.baseFile.exists()) {
+                val json = JSONObject(String(legacy.readFully(), Charsets.UTF_8))
+                json.optJSONArray("convs")?.let { arr ->
+                    for (i in 0 until arr.length()) readConv(arr.getJSONObject(i))?.let { convs[it.key] = it }
+                }
+                legacy.delete()
+                for (c in convs.values) c.dirty = true
+                main.postDelayed(saveRunnable, SAVE_DELAY_MS)
+            }
+            dir().listFiles()?.forEach { f ->
+                if (f.name.startsWith("c_") && f.name.endsWith(".json")) {
+                    try {
+                        val o = JSONObject(String(AtomicFile(f).readFully(), Charsets.UTF_8))
+                        readConv(o)?.let { c ->
+                            c.dirty = false
+                            convs[c.key] = c
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "bad chat file ${f.name}", e)
                     }
                 }
-                o.optJSONArray("seen")?.let { s -> for (j in 0 until s.length()) c.seen.add(s.getString(j)) }
+            }
+            for (c in convs.values) {
                 val af = avatarFile(c.key)
                 if (af.exists()) c.avatar = BitmapFactory.decodeFile(af.path)
-                convs[c.key] = c
+            }
+            val af = activityFile()
+            if (af.baseFile.exists()) {
+                val arr = JSONArray(String(af.readFully(), Charsets.UTF_8))
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val a = ActivityItem(o.getString("pkg"), o.optString("title"), o.optString("text"), o.optLong("ts"))
+                    a.unread = o.optBoolean("unread")
+                    activity.add(a)
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "load failed", e)
         }
     }
 
+    private fun readConv(o: JSONObject): Conversation? {
+        val key = o.optString("key")
+        if (key.isEmpty()) return null
+        val c = Conversation(key, o.getString("pkg"), o.optString("title"))
+        c.isGroup = o.optBoolean("group")
+        c.simulated = o.optBoolean("sim")
+        c.unread = o.optInt("unread")
+        c.lastTime = o.optLong("last")
+        c.active = o.optBoolean("active")
+        o.optJSONArray("msgs")?.let { ms ->
+            for (j in 0 until ms.length()) {
+                val m = ms.getJSONObject(j)
+                val st = m.optInt("st")
+                c.messages.add(
+                    ChatMessage(
+                        m.getString("t"), m.getLong("ts"), m.optBoolean("o"),
+                        if (m.has("s")) m.getString("s") else null,
+                        if (st == ChatMessage.STATUS_FAILED) st else ChatMessage.STATUS_OK,
+                        m.optInt("k", ChatMessage.KIND_TEXT)
+                    )
+                )
+            }
+        }
+        o.optJSONArray("seen")?.let { s -> for (j in 0 until s.length()) c.seen.add(s.getString(j)) }
+        return c
+    }
+
+    private fun convJson(c: Conversation): String {
+        val ms = JSONArray()
+        for (m in c.messages) {
+            val o = JSONObject().put("t", m.text).put("ts", m.time).put("o", m.outgoing).put("st", m.status)
+            if (m.sender != null) o.put("s", m.sender)
+            if (m.kind != ChatMessage.KIND_TEXT) o.put("k", m.kind)
+            ms.put(o)
+        }
+        return JSONObject()
+            .put("key", c.key).put("pkg", c.pkg).put("title", c.title)
+            .put("group", c.isGroup).put("sim", c.simulated)
+            .put("unread", c.unread).put("last", c.lastTime).put("active", c.active)
+            .put("msgs", ms)
+            .put("seen", JSONArray(c.seen.toList()))
+            .toString()
+    }
+
+    /** Writes only the chats that changed since the last save. */
     private fun saveNow() {
         if (app == null) return
-        val arr = JSONArray()
-        for (c in convs.values) {
-            val ms = JSONArray()
-            for (m in c.messages) {
-                val o = JSONObject().put("t", m.text).put("ts", m.time).put("o", m.outgoing).put("st", m.status)
-                if (m.sender != null) o.put("s", m.sender)
-                ms.put(o)
-            }
-            arr.put(
-                JSONObject()
-                    .put("key", c.key).put("pkg", c.pkg).put("title", c.title)
-                    .put("group", c.isGroup).put("sim", c.simulated)
-                    .put("unread", c.unread).put("last", c.lastTime).put("active", c.active)
-                    .put("msgs", ms)
-                    .put("seen", JSONArray(c.seen.toList()))
-            )
+        val writes = ArrayList<Pair<AtomicFile, String>>()
+        for (c in convs.values) if (c.dirty) {
+            writes.add(convFile(c.key) to convJson(c))
+            c.dirty = false
         }
-        val text = JSONObject().put("convs", arr).toString()
-        val f = dataFile()
+        if (activityDirty) {
+            val arr = JSONArray()
+            for (a in activity) {
+                arr.put(JSONObject().put("pkg", a.pkg).put("title", a.title).put("text", a.text).put("ts", a.time).put("unread", a.unread))
+            }
+            writes.add(activityFile() to arr.toString())
+            activityDirty = false
+        }
+        if (writes.isEmpty()) return
         io.execute {
-            var out: FileOutputStream? = null
-            try {
-                val stream = f.startWrite()
-                out = stream
-                stream.write(text.toByteArray(Charsets.UTF_8))
-                f.finishWrite(stream)
-            } catch (e: Exception) {
-                if (out != null) f.failWrite(out)
-                Log.w(TAG, "save failed", e)
+            for ((f, text) in writes) {
+                var out: FileOutputStream? = null
+                try {
+                    val stream = f.startWrite()
+                    out = stream
+                    stream.write(text.toByteArray(Charsets.UTF_8))
+                    f.finishWrite(stream)
+                } catch (e: Exception) {
+                    if (out != null) f.failWrite(out)
+                    Log.w(TAG, "save failed", e)
+                }
             }
         }
     }

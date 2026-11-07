@@ -28,6 +28,7 @@ import com.ershad.directbubbles.core.AppIcons
 import com.ershad.directbubbles.core.Avatars
 import com.ershad.directbubbles.core.ChatStore
 import com.ershad.directbubbles.core.Prefs
+import com.ershad.directbubbles.service.BubbleNotificationListener
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -53,6 +54,8 @@ object OverlayController {
     private var popup: PopupUi? = null
     private var focusKey: String? = null
     private var snapAnimator: ValueAnimator? = null
+    private var preview: View? = null
+    private val hidePreviewRunnable = Runnable { hidePreview() }
     private val refreshRunnable = Runnable { refreshNow() }
 
     fun init(c: Context) {
@@ -81,19 +84,21 @@ object OverlayController {
             return
         }
         showBubble(true)
+        if (Prefs.messagePreview(a)) showPreview(key)
     }
 
     /** Opens the Messenger-style popup (a person's thread if [key] is given, otherwise the inbox). */
-    fun openPopup(key: String?) {
+    fun openPopup(key: String?, focusInput: Boolean = false) {
         val a = app ?: return
         if (!canDraw()) {
             Toast.makeText(a, "Allow \"Display over other apps\" first", Toast.LENGTH_SHORT).show()
             return
         }
+        hidePreview()
         removeBubble()
         val p = popup ?: PopupUi(ui, wm) { collapsePopup() }.also { popup = it }
         try {
-            p.attach(key)
+            p.attach(key, focusInput)
         } catch (e: Exception) {
             Log.w(TAG, "popup failed", e)
             popup = null
@@ -101,18 +106,45 @@ object OverlayController {
         }
     }
 
-    /** Popup -> back to the floating chat head (or nothing if no chat is active). */
+    /**
+     * Popup -> back to the floating chat head. The floating (master) bubble always comes back,
+     * even when every person's head was closed, so the Instagram/WhatsApp inboxes stay reachable.
+     * Only dragging the master bubble itself onto the X closes everything.
+     */
     fun collapsePopup() {
         val p = popup ?: return
         p.detach {
             val a = app ?: return@detach
-            if (ChatStore.activeOnes().isNotEmpty() && Prefs.bubblesOn(a) && canDraw()) showBubble(false)
+            if (Prefs.bubblesOn(a) && canDraw()) showBubble(false)
         }
+    }
+
+    /** Preferences → Bubble Size changed: redraw the floating head at the new size. */
+    fun onBubbleSizeChanged() {
+        if (bubble == null) return
+        removeBubble()
+        showBubble(false)
+    }
+
+    /** Closes ONE person's chat head; every other head and the app inbox bubbles stay. */
+    fun closeChat(key: String, clearNotifications: Boolean = true) {
+        val a = app ?: return
+        val c = ChatStore.get(key) ?: return
+        if (clearNotifications && Prefs.clearOnRemoved(a) && !c.simulated) {
+            BubbleNotificationListener.cancel(ArrayList(c.notifKeys))
+        }
+        ChatStore.setActive(key, false)
+        if (focusKey == key) focusKey = null
     }
 
     /** Removes every bubble and stops the keep-alive service (chat history is kept). */
     fun dismissAll() {
         val a = app ?: return
+        hidePreview()
+        if (Prefs.clearOnRemoved(a)) {
+            for (c in ChatStore.activeOnes()) if (!c.simulated) BubbleNotificationListener.cancel(ArrayList(c.notifKeys))
+        }
+        bubbleParams?.let { Prefs.saveBubblePos(a, it.x < screenSize().x / 2, it.y) }
         ChatStore.dismissAll()
         popup?.let { if (it.attached) it.detach {} }
         snapAnimator?.cancel()
@@ -136,11 +168,11 @@ object OverlayController {
 
     private fun showBubble(animate: Boolean) {
         val a = app ?: return
-        if (focusConvKey() == null) return
         var v = bubble
         if (v == null) {
             ensureDismissTarget()   // added first so the chat head always stays above the X
             v = LayoutInflater.from(ui).inflate(R.layout.bubble_head, null)
+            applyBubbleSize(v)
             val p = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -152,9 +184,13 @@ object OverlayController {
             )
             p.gravity = Gravity.TOP or Gravity.START
             val screen = screenSize()
-            val size = dp(76)
-            p.x = if (Prefs.bubbleOnLeft(a)) -dp(6) else screen.x - size + dp(6)
-            p.y = Prefs.bubbleY(a, screen.y / 4).coerceIn(dp(48), max(dp(48), screen.y - size - dp(96)))
+            val size = dp(Prefs.bubbleSize(a) + 12)
+            // "Remember last position": put the head where it was last closed/moved.
+            val remember = Prefs.rememberPosition(a)
+            val left = remember && Prefs.bubbleOnLeft(a)
+            p.x = if (left) -dp(6) else screen.x - size + dp(6)
+            val y = if (remember) Prefs.bubbleY(a, screen.y / 4) else screen.y / 4
+            p.y = y.coerceIn(dp(48), max(dp(48), screen.y - size - dp(96)))
             v.setOnTouchListener(BubbleTouch(v, p))
             try {
                 wm.addView(v, p)
@@ -171,15 +207,36 @@ object OverlayController {
         bindBubble()
     }
 
+    /** Preferences → Bubble Size (40–80 dp). */
+    private fun applyBubbleSize(v: View) {
+        val a = app ?: return
+        val size = Prefs.bubbleSize(a)
+        // The window wraps its content: 6dp padding around the avatar leaves room for the shadow.
+        v.setPadding(dp(6), dp(6), dp(6), dp(6))
+        val av = v.findViewById<View>(R.id.bubble_avatar)
+        (av.layoutParams as android.widget.FrameLayout.LayoutParams).apply { width = dp(size); height = dp(size) }
+        val badge = v.findViewById<View>(R.id.bubble_badge)
+        val bs = (size * 0.38f).toInt().coerceAtLeast(16)
+        (badge.layoutParams as android.widget.FrameLayout.LayoutParams).apply { width = dp(bs); height = dp(bs) }
+    }
+
     private fun bindBubble() {
         val v = bubble ?: return
         val conv = ChatStore.get(focusConvKey())
+        val avatar = v.findViewById<ImageView>(R.id.bubble_avatar)
+        val badge = v.findViewById<ImageView>(R.id.bubble_badge)
         if (conv == null) {
-            removeBubble()
+            // Master bubble with no open person: shows the app icon and opens the inboxes.
+            avatar.setImageBitmap(AppIcons.big(ui, ui.packageName))
+            badge.visibility = View.GONE
+            val unreadT = v.findViewById<TextView>(R.id.bubble_unread)
+            unreadT.visibility = View.GONE
+            v.contentDescription = "Direct Bubbles inbox"
             return
         }
-        v.findViewById<ImageView>(R.id.bubble_avatar).setImageBitmap(Avatars.forConv(conv))
-        v.findViewById<ImageView>(R.id.bubble_badge).setImageBitmap(AppIcons.badge(ui, conv.pkg))
+        badge.visibility = View.VISIBLE
+        avatar.setImageBitmap(Avatars.forConv(conv))
+        badge.setImageBitmap(AppIcons.badge(ui, conv.pkg))
         val unread = ChatStore.totalUnread()
         val tv = v.findViewById<TextView>(R.id.bubble_unread)
         tv.visibility = if (unread > 0) View.VISIBLE else View.GONE
@@ -187,7 +244,59 @@ object OverlayController {
         v.contentDescription = "Chat with ${conv.title}"
     }
 
+    // ---------------- message preview ----------------
+
+    /** Small card next to the minimized bubble with the new message (Preferences → Message Preview). */
+    private fun showPreview(key: String) {
+        val a = app ?: return
+        val c = ChatStore.get(key) ?: return
+        val bp = bubbleParams ?: return
+        val m = c.last ?: return
+        hidePreview()
+        val v = LayoutInflater.from(ui).inflate(R.layout.message_preview, null)
+        v.findViewById<TextView>(R.id.preview_name).text = c.title
+        v.findViewById<TextView>(R.id.preview_text).text = m.text
+        val screen = screenSize()
+        val bubbleW = dp(Prefs.bubbleSize(a) + 12)
+        val onLeft = bp.x + bubbleW / 2 < screen.x / 2
+        val p = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        )
+        if (onLeft) {
+            p.gravity = Gravity.TOP or Gravity.START
+            p.x = bp.x + bubbleW
+        } else {
+            p.gravity = Gravity.TOP or Gravity.END
+            p.x = screen.x - bp.x
+        }
+        p.y = bp.y + dp(6)
+        v.setOnClickListener {
+            hidePreview()
+            // "Instant Reply": open the chat with the keyboard ready.
+            openPopup(key, focusInput = Prefs.instantReply(a))
+        }
+        try {
+            wm.addView(v, p)
+            preview = v
+            v.startAnimation(AnimationUtils.loadAnimation(ui, R.anim.bounce))
+            main.postDelayed(hidePreviewRunnable, Prefs.previewTimeout(a) * 1000L)
+        } catch (e: Exception) {
+            Log.w(TAG, "preview failed", e)
+        }
+    }
+
+    private fun hidePreview() {
+        main.removeCallbacks(hidePreviewRunnable)
+        preview?.let { safeRemove(it) }
+        preview = null
+    }
+
     private fun removeBubble() {
+        hidePreview()
         snapAnimator?.cancel()
         bubble?.let { safeRemove(it) }
         bubble = null
@@ -269,6 +378,7 @@ object OverlayController {
                     dragging = false
                     inTarget = false
                     snapAnimator?.cancel()
+                    hidePreview()
                     view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(90).start()
                 }
                 MotionEvent.ACTION_MOVE -> {
