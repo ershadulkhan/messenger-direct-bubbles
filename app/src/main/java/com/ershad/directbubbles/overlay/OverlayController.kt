@@ -220,7 +220,7 @@ object OverlayController {
             width = dp(size); height = dp(size); setMargins(dp(m), dp(m), dp(m), dp(m))
         }
         // Badges sit centred on the avatar's circle edge (45 degrees), like Messenger.
-        val bs = (size * 0.40f).toInt().coerceAtLeast(18)
+        val bs = (size * 0.30f).toInt().coerceAtLeast(14)
         val off = (m + size * 0.146f - bs / 2f).toInt()
         val badge = v.findViewById<View>(R.id.bubble_badge)
         (badge.layoutParams as android.widget.FrameLayout.LayoutParams).apply {

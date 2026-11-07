@@ -21,6 +21,8 @@ import com.ershad.directbubbles.core.TimeFmt
 /** Inbox rows: [avatar + app badge] | name | latest message · time | unread count. Newest on top. */
 class InboxAdapter(private val ctx: Context) : BaseAdapter() {
     private var items: List<Conversation> = emptyList()
+    /** Per-app theme: the inbox page uses the same colors as the chosen chat theme. */
+    var theme: ChatTheme? = null
 
     fun setData(list: List<Conversation>) {
         items = list
@@ -43,7 +45,14 @@ class InboxAdapter(private val ctx: Context) : BaseAdapter() {
         val preview = v.findViewById<TextView>(R.id.row_preview)
         preview.text = c.preview()
         preview.setTypeface(null, if (unread) Typeface.BOLD else Typeface.NORMAL)
-        preview.setTextColor(ctx.getColor(if (unread) R.color.text_primary else R.color.text_secondary))
+        val t = theme
+        if (t != null) {
+            name.setTextColor(Themes.onColor(t.chatBg))
+            preview.setTextColor(if (unread) Themes.onColor(t.chatBg) else Themes.subtleOn(t.chatBg))
+            v.findViewById<TextView>(R.id.row_time).setTextColor(Themes.subtleOn(t.chatBg))
+        } else {
+            preview.setTextColor(ctx.getColor(if (unread) R.color.text_primary else R.color.text_secondary))
+        }
         v.findViewById<TextView>(R.id.row_time).text = " · " + TimeFmt.short(ctx, c.lastTime)
         val badge = v.findViewById<TextView>(R.id.row_unread)
         badge.visibility = if (unread) View.VISIBLE else View.GONE
@@ -144,7 +153,7 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
                 m.status == ChatMessage.STATUS_SENDING && age > 3_000L -> {
                     status.visibility = View.VISIBLE
                     status.setTextColor(ctx.getColor(R.color.text_secondary))
-                    status.text = "Waiting · sends with their next message"
+                    status.text = "Waiting to send…"
                 }
                 else -> status.visibility = View.GONE
             }
@@ -180,6 +189,8 @@ class ActivityAdapter(private val ctx: Context) : BaseAdapter() {
         notifyDataSetChanged()
     }
 
+    var theme: ChatTheme? = null
+
     override fun getCount(): Int = items.size
     override fun getItem(position: Int): ActivityItem = items[position]
     override fun getItemId(position: Int): Long = position.toLong()
@@ -193,6 +204,11 @@ class ActivityAdapter(private val ctx: Context) : BaseAdapter() {
         title.setTypeface(null, if (a.unread) Typeface.BOLD else Typeface.NORMAL)
         v.findViewById<TextView>(R.id.act_text).text = a.text
         v.findViewById<TextView>(R.id.act_time).text = TimeFmt.short(ctx, a.time)
+        theme?.let { t ->
+            title.setTextColor(Themes.onColor(t.chatBg))
+            v.findViewById<TextView>(R.id.act_text).setTextColor(Themes.subtleOn(t.chatBg))
+            v.findViewById<TextView>(R.id.act_time).setTextColor(Themes.subtleOn(t.chatBg))
+        }
         v.findViewById<View>(R.id.act_dot).visibility = if (a.unread) View.VISIBLE else View.GONE
         return v
     }

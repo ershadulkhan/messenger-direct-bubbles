@@ -226,6 +226,7 @@ class PopupUi(
             val label = AppIcons.label(ctx, pkg)
             val list = ChatStore.all().filter { it.pkg == pkg }   // only this app's chats
             inboxTitle.text = label
+            applyInboxTheme(pkg)
             val hasActivityTab = pkg in com.ershad.directbubbles.core.NotificationParser.ACTIVITY_APPS
             if (!hasActivityTab) showingActivity = false
             inboxTabs.visibility = if (hasActivityTab) View.VISIBLE else View.GONE
@@ -253,7 +254,7 @@ class PopupUi(
             }
             inboxEmpty.visibility = if (empty) View.VISIBLE else View.GONE
             inboxList.visibility = if (empty) View.GONE else View.VISIBLE
-            topArrow.imageTintList = android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.panel_bg))
+            topArrow.imageTintList = android.content.res.ColorStateList.valueOf(Themes.forPkg(ctx, pkg).chatBg)
         } else {
             val c = ChatStore.get(key)
             if (c == null) {
@@ -276,6 +277,24 @@ class PopupUi(
             }
             ChatStore.markRead(c)
         }
+    }
+
+    private var inboxTheme: com.ershad.directbubbles.core.ChatTheme? = null
+
+    /** The app inbox page (Instagram / WhatsApp) follows the same per-app theme as its chats. */
+    private fun applyInboxTheme(pkg: String) {
+        val t = Themes.forPkg(ctx, pkg)
+        inboxTheme = t
+        inboxAdapter.theme = t
+        activityAdapter.theme = t
+        inboxContainer.background = GradientDrawable().apply { setColor(t.chatBg) }
+        inboxList.setBackgroundColor(t.chatBg)
+        inboxTitle.setTextColor(Themes.onColor(t.chatBg))
+        inboxEmpty.setTextColor(Themes.subtleOn(t.chatBg))
+        root.findViewById<ImageView>(R.id.btn_close_inbox).imageTintList =
+            android.content.res.ColorStateList.valueOf(Themes.onColor(t.chatBg))
+        inboxAdapter.notifyDataSetChanged()
+        activityAdapter.notifyDataSetChanged()
     }
 
     /** Colors of the chat window come from the per-app theme (default: AMOLED black in dark mode). */
@@ -321,12 +340,31 @@ class PopupUi(
         /** How many times each message was re-sent; every retry starts from the next reply route. */
         private val attempts = HashMap<String, Int>()
 
-        /** Replies typed while the app had no reply button for that chat; sent with its next notification. */
+        /** Replies waiting for their turn (no reply button yet, or the previous reply is still in flight). */
         private val queued = HashMap<String, MutableList<ChatMessage>>()
+        private val lastSent = HashMap<String, ChatMessage>()
+        private val lastSentAt = HashMap<String, Long>()
+        private const val IN_FLIGHT_MS = 5_000L
+        private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
         private fun keyOf(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) = c.key + "\u0000" + m.text + "\u0000" + m.time
 
         fun attemptOf(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) = attempts[keyOf(c, m)] ?: 0
+
+        /**
+         * Instagram/WhatsApp handle one reply per notification at a time: a second reply sent while the
+         * first is still being processed is dropped or delayed. So replies to one chat go out in order,
+         * the next one as soon as the previous is confirmed (or after 5 seconds).
+         */
+        fun inFlight(c: com.ershad.directbubbles.core.Conversation): Boolean {
+            val m = lastSent[c.key] ?: return false
+            return m.status == ChatMessage.STATUS_OK && System.currentTimeMillis() - (lastSentAt[c.key] ?: 0L) < IN_FLIGHT_MS
+        }
+
+        fun markSent(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+            lastSent[c.key] = m
+            lastSentAt[c.key] = System.currentTimeMillis()
+        }
 
         /** @return null = sent, "none" = no reply button right now, "failed" = every button refused. */
         fun sendNow(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage, attempt: Int): String? {
@@ -335,7 +373,6 @@ class PopupUi(
             val fresh = BubbleNotificationListener.freshRepliesFor(c)
             val all = (fresh + listOfNotNull(c.replyAction)).distinctBy { it.actionIntent }
             if (all.isEmpty()) return "none"
-            // Retry N starts from the Nth route, so a button the app ignores is not repeated forever.
             val r = attempt % all.size
             val candidates = all.drop(r) + all.take(r)
             attempts[keyOf(c, m)] = attempt
@@ -349,20 +386,33 @@ class PopupUi(
             return "failed"
         }
 
-        fun queue(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+        fun queue(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
             queued.getOrPut(c.key) { ArrayList() }.add(m)
+            schedulePump(ctx, c.key, if (inFlight(c)) IN_FLIGHT_MS + 100 else 1500)
         }
 
-        /** Called by the listener when [key]'s app posts a notification with a reply button again. */
-        fun flushQueued(ctx: android.content.Context, key: String) {
-            val list = queued.remove(key) ?: return
-            val c = ChatStore.get(key) ?: return
-            for (m in list) {
-                if (m.status != ChatMessage.STATUS_SENDING) continue
-                m.status = if (sendNow(ctx, c, m, 0) == null) ChatMessage.STATUS_OK else ChatMessage.STATUS_FAILED
-            }
-            ChatStore.notifyChanged()
+        private fun schedulePump(ctx: android.content.Context, key: String, delay: Long) {
+            val appCtx = ctx.applicationContext
+            handler.postDelayed({ flushQueued(appCtx, key) }, delay)
         }
+
+        /** Sends this chat's waiting replies, one at a time. Called on new notifications and by a timer. */
+        fun flushQueued(ctx: android.content.Context, key: String) {
+            val list = queued[key] ?: return
+            val c = ChatStore.get(key) ?: run { queued.remove(key); return }
+            while (list.isNotEmpty()) {
+                val m = list[0]
+                if (m.status != ChatMessage.STATUS_SENDING) { list.removeAt(0); continue }
+                if (inFlight(c)) { schedulePump(ctx, key, 1200); break }
+                when (sendNow(ctx, c, m, 0)) {
+                    null -> { m.status = ChatMessage.STATUS_OK; markSent(c, m); list.removeAt(0) }
+                    "none" -> break   // wait for this chat's next notification
+                    else -> { m.status = ChatMessage.STATUS_FAILED; list.removeAt(0) }
+                }
+            }
+            if (list.isEmpty()) queued.remove(key)
+            ChatStore.notifyChanged()
+    }
     }
 
     /** Closes one app's inbox bubble (Instagram / WhatsApp); everything else stays. */
@@ -389,15 +439,7 @@ class PopupUi(
         // 1) One inbox bubble per app (Instagram inbox, WhatsApp inbox, ...)
         for (pkg in platforms()) {
             val v = inflater.inflate(R.layout.item_head, headsRow, false)
-            val appIcon = v.findViewById<ImageView>(R.id.head_avatar)
-            appIcon.setImageBitmap(AppIcons.big(ctx, pkg))
-            // App icons are drawn smaller than people's photos, like DirectChat.
-            (appIcon.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
-                width = (38 * density).toInt(); height = (38 * density).toInt()
-            }
-            (v.findViewById<View>(R.id.head_dot).layoutParams as android.widget.FrameLayout.LayoutParams).apply {
-                topMargin = (5 * density).toInt(); marginEnd = (5 * density).toInt()
-            }
+            v.findViewById<ImageView>(R.id.head_avatar).setImageBitmap(AppIcons.big(ctx, pkg))
             v.findViewById<View>(R.id.head_badge).visibility = View.GONE
             val unread = ChatStore.all().any { it.pkg == pkg && it.unread > 0 } || ChatStore.unreadActivity(pkg) > 0
             val pu = ChatStore.all().filter { it.pkg == pkg }.sumOf { it.unread }
@@ -645,17 +687,22 @@ class PopupUi(
      */
     private fun deliver(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage, attempt: Int = 0) {
         val appCtx = ctx.applicationContext
+        if (inFlight(c) || queued[c.key]?.isNotEmpty() == true) {
+            // Keep order: wait for the previous reply to be handled first.
+            m.status = ChatMessage.STATUS_SENDING
+            queue(appCtx, c, m)
+            ChatStore.notifyChanged()
+            return
+        }
         when (sendNow(appCtx, c, m, attempt)) {
             null -> {
                 m.status = ChatMessage.STATUS_OK
-                // One-shot check later: shows "Not confirmed yet" if the app never confirmed it.
+                markSent(c, m)
                 root.postDelayed({ if (attached) refresh() }, ThreadAdapter.UNCONFIRMED_AFTER_MS + 500)
             }
             "none" -> {
-                // No reply button right now (notification gone): keep it waiting and send it with
-                // this chat's next notification instead of failing.
                 m.status = ChatMessage.STATUS_SENDING
-                queue(c, m)
+                queue(appCtx, c, m)
                 Toast.makeText(appCtx, "Waiting: it sends automatically with ${c.title}'s next message. Or tap ↗ to open the app.", Toast.LENGTH_LONG).show()
             }
             else -> {
@@ -677,12 +724,13 @@ class PopupUi(
     private fun styleTab(tab: TextView, selected: Boolean) {
         val bg = GradientDrawable()
         bg.cornerRadius = 17 * density
+        val t = inboxTheme
         if (selected) {
-            bg.setColor(ctx.getColor(R.color.brand_blue))
-            tab.setTextColor(android.graphics.Color.WHITE)
+            bg.setColor(t?.send ?: ctx.getColor(R.color.brand_blue))
+            tab.setTextColor(if (t != null) Themes.onColor(t.send) else android.graphics.Color.WHITE)
         } else {
-            bg.setColor(ctx.getColor(R.color.surface))
-            tab.setTextColor(ctx.getColor(R.color.text_primary))
+            bg.setColor(t?.inputBg ?: ctx.getColor(R.color.surface))
+            tab.setTextColor(if (t != null) Themes.onColor(t.inputBg) else ctx.getColor(R.color.text_primary))
         }
         tab.background = bg
     }
