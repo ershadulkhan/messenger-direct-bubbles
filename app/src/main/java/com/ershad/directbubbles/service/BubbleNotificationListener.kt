@@ -77,6 +77,8 @@ class BubbleNotificationListener : NotificationListenerService() {
         if (Prefs.isFiltered(this, batch.pkg, batch.title)) return   // per-app keyword filters
         ChatStore.init(this)
         val added = ChatStore.ingest(batch)
+        // Replies typed while this chat had no reply button go out now.
+        if (batch.reply != null) com.ershad.directbubbles.overlay.PopupUi.flushQueued(this, batch.key)
         if (added > 0) {
             OverlayController.init(this)
             OverlayController.onNewMessages(batch.key)

@@ -317,6 +317,52 @@ class PopupUi(
         fun resetHiddenPlatforms() {
             hiddenPlatforms.clear()
         }
+
+        /** How many times each message was re-sent; every retry starts from the next reply route. */
+        private val attempts = HashMap<String, Int>()
+
+        /** Replies typed while the app had no reply button for that chat; sent with its next notification. */
+        private val queued = HashMap<String, MutableList<ChatMessage>>()
+
+        private fun keyOf(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) = c.key + "\u0000" + m.text + "\u0000" + m.time
+
+        fun attemptOf(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) = attempts[keyOf(c, m)] ?: 0
+
+        /** @return null = sent, "none" = no reply button right now, "failed" = every button refused. */
+        fun sendNow(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage, attempt: Int): String? {
+            val appCtx = ctx.applicationContext
+            BubbleNotificationListener.ensureConnected(appCtx)
+            val fresh = BubbleNotificationListener.freshRepliesFor(c)
+            val all = (fresh + listOfNotNull(c.replyAction)).distinctBy { it.actionIntent }
+            if (all.isEmpty()) return "none"
+            // Retry N starts from the Nth route, so a button the app ignores is not repeated forever.
+            val r = attempt % all.size
+            val candidates = all.drop(r) + all.take(r)
+            attempts[keyOf(c, m)] = attempt
+            for (a in candidates) {
+                if (ReplySender.send(appCtx, a, m.text, (attempt / all.size) % 2 == 0)) {
+                    c.replyAction = a
+                    return null
+                }
+            }
+            c.replyAction = null
+            return "failed"
+        }
+
+        fun queue(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+            queued.getOrPut(c.key) { ArrayList() }.add(m)
+        }
+
+        /** Called by the listener when [key]'s app posts a notification with a reply button again. */
+        fun flushQueued(ctx: android.content.Context, key: String) {
+            val list = queued.remove(key) ?: return
+            val c = ChatStore.get(key) ?: return
+            for (m in list) {
+                if (m.status != ChatMessage.STATUS_SENDING) continue
+                m.status = if (sendNow(ctx, c, m, 0) == null) ChatMessage.STATUS_OK else ChatMessage.STATUS_FAILED
+            }
+            ChatStore.notifyChanged()
+        }
     }
 
     /** Closes one app's inbox bubble (Instagram / WhatsApp); everything else stays. */
@@ -343,7 +389,15 @@ class PopupUi(
         // 1) One inbox bubble per app (Instagram inbox, WhatsApp inbox, ...)
         for (pkg in platforms()) {
             val v = inflater.inflate(R.layout.item_head, headsRow, false)
-            v.findViewById<ImageView>(R.id.head_avatar).setImageBitmap(AppIcons.big(ctx, pkg))
+            val appIcon = v.findViewById<ImageView>(R.id.head_avatar)
+            appIcon.setImageBitmap(AppIcons.big(ctx, pkg))
+            // App icons are drawn smaller than people's photos, like DirectChat.
+            (appIcon.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
+                width = (38 * density).toInt(); height = (38 * density).toInt()
+            }
+            (v.findViewById<View>(R.id.head_dot).layoutParams as android.widget.FrameLayout.LayoutParams).apply {
+                topMargin = (5 * density).toInt(); marginEnd = (5 * density).toInt()
+            }
             v.findViewById<View>(R.id.head_badge).visibility = View.GONE
             val unread = ChatStore.all().any { it.pkg == pkg && it.unread > 0 } || ChatStore.unreadActivity(pkg) > 0
             val pu = ChatStore.all().filter { it.pkg == pkg }.sumOf { it.unread }
@@ -589,34 +643,25 @@ class PopupUi(
      * shade — Instagram replaces its notification, and the newest button is the one it expects),
      * then the cached one as a backup.
      */
-    /** How many times each message was re-sent; every retry tries the next reply button variant. */
-    private val attempts = HashMap<String, Int>()
-
     private fun deliver(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage, attempt: Int = 0) {
         val appCtx = ctx.applicationContext
-        BubbleNotificationListener.ensureConnected(appCtx)
-        val fresh = BubbleNotificationListener.freshRepliesFor(c)
-        val all = (fresh + listOfNotNull(c.replyAction)).distinct()
-        // Retry N starts from the Nth variant, so a button Instagram ignores is not repeated forever.
-        val candidates = if (all.isEmpty()) all else all.drop(attempt % all.size) + all.take(attempt % all.size)
-        attempts[c.key + "\u0000" + m.text] = attempt
-        var ok = false
-        for (a in candidates) {
-            if (ReplySender.send(appCtx, a, m.text, attempt % 2 == 0)) {
-                c.replyAction = a
-                ok = true
-                break
+        when (sendNow(appCtx, c, m, attempt)) {
+            null -> {
+                m.status = ChatMessage.STATUS_OK
+                // One-shot check later: shows "Not confirmed yet" if the app never confirmed it.
+                root.postDelayed({ if (attached) refresh() }, ThreadAdapter.UNCONFIRMED_AFTER_MS + 500)
             }
-        }
-        m.status = if (ok) ChatMessage.STATUS_OK else ChatMessage.STATUS_FAILED
-        if (!ok) {
-            c.replyAction = null
-            val msg = if (candidates.isEmpty()) "No reply button for this chat right now. It comes back with their next message, or open the app."
-            else "Not sent — the reply button expired. Tap the message to retry, or open the app."
-            Toast.makeText(appCtx, msg, Toast.LENGTH_LONG).show()
-        } else {
-            // One-shot check later: shows "Not confirmed yet" if the app never confirmed it.
-            root.postDelayed({ if (attached) refresh() }, ThreadAdapter.UNCONFIRMED_AFTER_MS + 500)
+            "none" -> {
+                // No reply button right now (notification gone): keep it waiting and send it with
+                // this chat's next notification instead of failing.
+                m.status = ChatMessage.STATUS_SENDING
+                queue(c, m)
+                Toast.makeText(appCtx, "Waiting: it sends automatically with ${c.title}'s next message. Or tap ↗ to open the app.", Toast.LENGTH_LONG).show()
+            }
+            else -> {
+                m.status = ChatMessage.STATUS_FAILED
+                Toast.makeText(appCtx, "Not sent: the reply button expired. Tap the message to retry, or open the app.", Toast.LENGTH_LONG).show()
+            }
         }
         ChatStore.notifyChanged()
     }
@@ -624,8 +669,7 @@ class PopupUi(
     /** Tap on my failed / unconfirmed message: send it again. */
     private fun retry(m: ChatMessage) {
         val c = ChatStore.get(currentKey) ?: return
-        val k = c.key + "\u0000" + m.text
-        val next = (attempts[k] ?: 0) + 1
+        val next = attemptOf(c, m) + 1
         ChatStore.removeMessage(c, m)
         deliver(c, ChatStore.addOutgoing(c, m.text), next)
     }

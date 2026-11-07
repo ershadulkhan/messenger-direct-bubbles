@@ -7,6 +7,7 @@ import android.app.RemoteInput
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.Icon
+import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
 import android.service.notification.StatusBarNotification
@@ -283,18 +284,51 @@ object NotificationParser {
             }
     }
 
-    /** Finds the inline-reply action (with a free-text RemoteInput and a live PendingIntent). */
-    /** Every action that can take typed text (standard, Wear and car variants), best first. */
+    /**
+     * Every action that can take typed text, best first.
+     *
+     * Order matters for Instagram: its phone "Reply" button often points at a background *service*,
+     * which Android refuses to start for an app that is not in the foreground unless the system
+     * notification shade sends it. Its Wear OS reply (what DirectChat uses) is a *broadcast*, which
+     * is delivered right away. So: Wear first, then car/auto, then the visible button, and within
+     * each, broadcasts before foreground services before plain services before activities.
+     */
     fun allReplyActions(n: Notification): List<Notification.Action> {
-        val list = allActions(n).filter { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true && a.actionIntent != null }
-        return list.sortedBy { if (it.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY) 0 else 1 }
+        fun ok(a: Notification.Action) = a.actionIntent != null && a.remoteInputs?.any { it.allowFreeFormInput } == true
+        val wear = try { Notification.WearableExtender(n).actions.filter(::ok) } catch (e: Exception) { emptyList() }
+        val car = invisibleActions(n).filter(::ok)
+        val phone = (n.actions ?: emptyArray()).filter(::ok)
+        val ranked = ArrayList<Pair<Int, Notification.Action>>()
+        wear.forEach { ranked.add(0 + kindRank(it) to it) }
+        car.forEach { ranked.add(10 + kindRank(it) to it) }
+        phone.forEach { ranked.add(20 + kindRank(it) to it) }
+        return ranked.sortedBy { it.first }.map { it.second }.distinctBy { it.actionIntent }
     }
 
-    fun findReplyAction(n: Notification): Notification.Action? {
-        val all = allActions(n)
-        fun Notification.Action.canType(): Boolean =
-            remoteInputs?.any { it.allowFreeFormInput } == true
-        return all.firstOrNull { it.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY && it.canType() }
-            ?: all.firstOrNull { it.canType() }
+    private fun kindRank(a: Notification.Action): Int {
+        val pi = a.actionIntent ?: return 9
+        if (Build.VERSION.SDK_INT < 31) return 0
+        return when {
+            pi.isBroadcast -> 0
+            pi.isForegroundService -> 1
+            pi.isService -> 2
+            pi.isActivity -> 3
+            else -> 4
+        }
     }
+
+    /** Short label of how a reply will travel, for the "Not confirmed" hint. */
+    fun routeOf(a: Notification.Action): String {
+        val pi = a.actionIntent ?: return "?"
+        if (Build.VERSION.SDK_INT < 31) return "reply"
+        return when {
+            pi.isBroadcast -> "broadcast"
+            pi.isForegroundService -> "fg-service"
+            pi.isService -> "service"
+            pi.isActivity -> "activity"
+            else -> "other"
+        }
+    }
+
+    fun findReplyAction(n: Notification): Notification.Action? = allReplyActions(n).firstOrNull()
 }

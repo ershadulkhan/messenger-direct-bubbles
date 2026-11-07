@@ -141,6 +141,11 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
                     status.setTextColor(ctx.getColor(R.color.text_secondary))
                     status.text = "Not confirmed yet · tap to send again"
                 }
+                m.status == ChatMessage.STATUS_SENDING && age > 3_000L -> {
+                    status.visibility = View.VISIBLE
+                    status.setTextColor(ctx.getColor(R.color.text_secondary))
+                    status.text = "Waiting · sends with their next message"
+                }
                 else -> status.visibility = View.GONE
             }
         } else {
