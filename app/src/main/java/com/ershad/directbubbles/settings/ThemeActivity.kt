@@ -60,6 +60,10 @@ class ThemeActivity : Activity() {
         lateinit var sub: TextView
     }
 
+    private var inbox = false
+
+    companion object { const val EXTRA_INBOX = "inbox" }
+
     private val fields = listOf(
         ColorField("Chat Title Bar Color", { it.titleBar }, { th, c -> th.copy(titleBar = c) }),
         ColorField("Chat Background Color", { it.chatBg }, { th, c -> th.copy(chatBg = c) }),
@@ -75,7 +79,8 @@ class ThemeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pkg = intent.getStringExtra(AppSettingsActivity.EXTRA_PKG) ?: run { finish(); return }
-        t = Themes.forPkg(this, pkg)
+        inbox = intent.getBooleanExtra(EXTRA_INBOX, false)
+        t = if (inbox) Themes.forInbox(this, pkg) else Themes.forPkg(this, pkg)
         build()
         render()
     }
@@ -88,7 +93,7 @@ class ThemeActivity : Activity() {
         root.orientation = LinearLayout.VERTICAL
         root.setBackgroundColor(getColor(R.color.window_bg))
 
-        bar = SettingsUi.topBar(this, "$label Theme", t.titleBar, "Test") { runTest() }
+        bar = SettingsUi.topBar(this, if (inbox) "$label Inbox Theme" else "$label Theme", t.titleBar, "Test") { runTest() }
         root.addView(bar)
         root.addView(buildPreview())
 
@@ -181,8 +186,8 @@ class ThemeActivity : Activity() {
         list.addView(iRow)
 
         val (resetRow, _) = SettingsUi.row(this, "Use Default Colors", "Reset to Messenger style (AMOLED black in dark mode)") {
-            Prefs.setThemeJson(this, pkg, null)
-            t = Themes.forPkg(this, pkg)
+            if (inbox) Prefs.setInboxThemeJson(this, pkg, null) else Prefs.setThemeJson(this, pkg, null)
+            t = if (inbox) Themes.forInbox(this, pkg) else Themes.forPkg(this, pkg)
             render()
             Toast.makeText(this, "Default colors restored", Toast.LENGTH_SHORT).show()
         }
@@ -268,7 +273,7 @@ class ThemeActivity : Activity() {
     }
 
     private fun save() {
-        Prefs.setThemeJson(this, pkg, t.toJson())
+        if (inbox) Prefs.setInboxThemeJson(this, pkg, t.toJson()) else Prefs.setThemeJson(this, pkg, t.toJson())
         render()
     }
 

@@ -90,6 +90,24 @@ class PermissionsActivity : Activity() {
             null
         ) { open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }.first)
 
+        list.addView(SettingsUi.section(this, "Faster Instagram replies (OriginOS 7)"))
+        list.addView(SettingsUi.row(
+            this, "Why replies can be late",
+            "A reply is handed to Instagram's own notification. If OriginOS has frozen or put Instagram to sleep, " +
+                "it only sends once Instagram wakes up. Turn these on for Instagram (and WhatsApp):\n" +
+                "1. Settings → Apps → App manager → the app → Battery → Background power consumption → High background power usage\n" +
+                "2. Same page: turn OFF \"Pause app activity if unused\"\n" +
+                "3. Permissions: Autostart, Floating window, Display on lock screen, Background pop-ups ON\n" +
+                "4. Settings → Battery → Power saving management: turn OFF \"Sleep standby optimization\" and \"Disconnect from internet after screen is off\"\n" +
+                "5. Recent apps: pull Instagram's card down / tap its lock so it is not cleared.",
+            null
+        ).first)
+        list.addView(SettingsUi.row(this, "Instagram app settings", "Open Instagram's App info page", null) { openAppInfoOf("com.instagram.android") }.first)
+        list.addView(SettingsUi.row(this, "WhatsApp app settings", "Open WhatsApp's App info page", null) { openAppInfoOf("com.whatsapp") }.first)
+        list.addView(SettingsUi.row(this, "Battery settings", "Open the phone's battery / power saving screen", null) {
+            open(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))
+        }.first)
+
         setContentView(root)
         SettingsUi.fitBars(root, bar)
     }
@@ -98,6 +116,8 @@ class PermissionsActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         build()
     }
+
+    private fun openAppInfoOf(pkg: String) = open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
 
     private fun openAppInfo() = open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
 

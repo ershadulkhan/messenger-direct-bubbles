@@ -82,6 +82,11 @@ class AppSettingsActivity : Activity() {
         }
         list.addView(themeRow)
 
+        val (inboxThemeRow, _) = SettingsUi.row(this, "Inbox & Activity Theme", "Separate colours for the main $label inbox page and its Activity list") {
+            startActivity(Intent(this, ThemeActivity::class.java).putExtra(EXTRA_PKG, pkg).putExtra(ThemeActivity.EXTRA_INBOX, true))
+        }
+        list.addView(inboxThemeRow)
+
         // ----- Filter chats -----
         list.addView(SettingsUi.section(this, "Filter Chats"))
         addFilterRow(list, Prefs.FILTER_CONTAINS, "Filter Chats containing Keyword", "Don't show chat heads for titles containing a specific keyword")

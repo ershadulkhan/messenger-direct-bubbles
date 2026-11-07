@@ -57,6 +57,9 @@ class PopupUi(
     private val inboxList: ListView = root.findViewById(R.id.inbox_list)
     private val inboxEmpty: TextView = root.findViewById(R.id.inbox_empty)
     private val inboxTabs: View = root.findViewById(R.id.inbox_tabs)
+    private val inboxSearch: View = root.findViewById(R.id.inbox_search)
+    private val searchBox: EditText = root.findViewById(R.id.search_box)
+    private val searchIcon: ImageView = root.findViewById(R.id.search_icon)
     private val tabChats: TextView = root.findViewById(R.id.tab_chats)
     private val tabActivity: TextView = root.findViewById(R.id.tab_activity)
     private val tabClear: TextView = root.findViewById(R.id.tab_clear)
@@ -111,6 +114,28 @@ class PopupUi(
         panel.clipToOutline = true                         // rounded corners clip the coloured header
         headsScroll.setOnScrollChangeListener { _, _, _, _, _ -> positionArrow() }
         root.findViewById<View>(R.id.btn_close_inbox).setOnClickListener { onCollapse() }
+        root.findViewById<View>(R.id.btn_camera).setOnClickListener {
+            val pkg = currentInboxPkg ?: return@setOnClickListener
+            onCollapse()
+            ReplySender.launchApp(ctx.applicationContext, pkg)
+        }
+        root.findViewById<View>(R.id.btn_more).setOnClickListener {
+            val pkg = currentInboxPkg ?: return@setOnClickListener
+            onCollapse()
+            try {
+                ctx.startActivity(
+                    android.content.Intent(ctx, com.ershad.directbubbles.settings.AppSettingsActivity::class.java)
+                        .putExtra(com.ershad.directbubbles.settings.AppSettingsActivity.EXTRA_PKG, pkg)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+            }
+        }
+        searchBox.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { if (attached) refresh() }
+        })
         btnBack.setOnClickListener { showInbox(ChatStore.get(currentKey)?.pkg) }
         btnClose.setOnClickListener { onCollapse() }
         btnOpen.setOnClickListener { openInApp() }
@@ -224,7 +249,9 @@ class PopupUi(
             }
             currentInboxPkg = pkg
             val label = AppIcons.label(ctx, pkg)
+            val q = searchBox.text.toString().trim().lowercase()
             val list = ChatStore.all().filter { it.pkg == pkg }   // only this app's chats
+                .filter { q.isEmpty() || it.title.lowercase().contains(q) || it.preview().lowercase().contains(q) }
             inboxTitle.text = label
             applyInboxTheme(pkg)
             val hasActivityTab = pkg in com.ershad.directbubbles.core.NotificationParser.ACTIVITY_APPS
@@ -283,16 +310,30 @@ class PopupUi(
 
     /** The app inbox page (Instagram / WhatsApp) follows the same per-app theme as its chats. */
     private fun applyInboxTheme(pkg: String) {
-        val t = Themes.forPkg(ctx, pkg)
+        val t = Themes.forInbox(ctx, pkg)
         inboxTheme = t
         inboxAdapter.theme = t
         activityAdapter.theme = t
         inboxContainer.background = GradientDrawable().apply { setColor(t.chatBg) }
         inboxList.setBackgroundColor(t.chatBg)
-        inboxTitle.setTextColor(Themes.onColor(t.chatBg))
+        val on = Themes.onColor(t.chatBg)
+        val whatsapp = pkg.startsWith("com.whatsapp")
+        // WhatsApp-style title: green accent on light/dark themes alike; other apps use plain text colour.
+        inboxTitle.setTextColor(if (whatsapp) t.send else on)
         inboxEmpty.setTextColor(Themes.subtleOn(t.chatBg))
-        root.findViewById<ImageView>(R.id.btn_close_inbox).imageTintList =
-            android.content.res.ColorStateList.valueOf(Themes.onColor(t.chatBg))
+        val tint = android.content.res.ColorStateList.valueOf(on)
+        for (id in intArrayOf(R.id.btn_close_inbox, R.id.btn_camera, R.id.btn_more)) root.findViewById<ImageView>(id).imageTintList = tint
+        val pill = GradientDrawable()
+        pill.cornerRadius = 23 * density
+        val pillColor = if (t.inputBg != t.chatBg) t.inputBg else if (Themes.isDark(t.chatBg)) 0xFF1C1C1E.toInt() else 0xFFF5F4F2.toInt()
+        pill.setColor(pillColor)
+        inboxSearch.background = pill
+        val onPill = Themes.onColor(pillColor)
+        searchBox.setTextColor(onPill)
+        searchBox.setHintTextColor(Themes.subtleOn(pillColor))
+        searchBox.hint = if (whatsapp) "Ask Meta AI or Search" else "Search"
+        searchIcon.imageTintList = android.content.res.ColorStateList.valueOf(Themes.subtleOn(pillColor))
+        inboxSearch.visibility = if (showingActivity) View.GONE else View.VISIBLE
         inboxAdapter.notifyDataSetChanged()
         activityAdapter.notifyDataSetChanged()
     }
@@ -344,7 +385,7 @@ class PopupUi(
         private val queued = HashMap<String, MutableList<ChatMessage>>()
         private val lastSent = HashMap<String, ChatMessage>()
         private val lastSentAt = HashMap<String, Long>()
-        private const val IN_FLIGHT_MS = 5_000L
+        private const val IN_FLIGHT_MS = 2_500L
         private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
         private fun keyOf(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) = c.key + "\u0000" + m.text + "\u0000" + m.time
@@ -520,7 +561,7 @@ class PopupUi(
         val pkg = requested?.takeIf { it !in hiddenPlatforms }
         if (currentInboxPkg in hiddenPlatforms) currentInboxPkg = null
         val switching = currentKey != null || (pkg != null && pkg != currentInboxPkg)
-        if (pkg != null && pkg != currentInboxPkg) showingActivity = false
+        if (pkg != null && pkg != currentInboxPkg) { showingActivity = false; searchBox.setText("") }
         if (pkg != null) currentInboxPkg = pkg
         else if (currentInboxPkg == null) currentInboxPkg = platforms().firstOrNull()
         currentKey = null

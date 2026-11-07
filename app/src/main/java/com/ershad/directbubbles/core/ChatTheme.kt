@@ -89,7 +89,13 @@ object Themes {
         c("#FFFFFF"), c("#FFFFFF"), c("#7B3FF2"), c("#1A1A1A"), c("#FFFFFF"), 0, 0
     )
 
+    val LIGHT_CLEAN = ChatTheme(
+        c("#FFFFFF"), c("#FFFFFF"), c("#F0F0F0"), c("#D9FDD3"), null,
+        c("#111B21"), c("#111B21"), c("#1FA855"), c("#F5F4F2"), c("#111B21"), 1, 1
+    )
+
     val PRESETS: List<Pair<String, ChatTheme>> = listOf(
+        "Light" to LIGHT_CLEAN,
         "Messenger AMOLED" to MESSENGER_AMOLED,
         "Messenger Light" to MESSENGER_LIGHT,
         "WhatsApp Light" to WHATSAPP_LIGHT,
@@ -110,6 +116,12 @@ object Themes {
     fun forPkg(ctx: Context, pkg: String): ChatTheme {
         val json = Prefs.themeJson(ctx, pkg) ?: return defaultTheme(ctx)
         return ChatTheme.fromJson(json, defaultTheme(ctx))
+    }
+
+    /** Inbox / Activity page theme: its own choice, else the app's chat theme. */
+    fun forInbox(ctx: Context, pkg: String): ChatTheme {
+        val json = Prefs.inboxThemeJson(ctx, pkg) ?: return forPkg(ctx, pkg)
+        return ChatTheme.fromJson(json, forPkg(ctx, pkg))
     }
 
     fun isDark(color: Int): Boolean = Color.luminance(color) < 0.45f

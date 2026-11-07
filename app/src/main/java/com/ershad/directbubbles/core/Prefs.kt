@@ -94,6 +94,15 @@ object Prefs {
         e.apply()
     }
 
+    /** Separate theme for the main inbox + Activity page of an app (falls back to the chat theme). */
+    fun inboxThemeJson(c: Context, pkg: String): String? = sp(c).getString("inbox_theme_$pkg", null)
+
+    fun setInboxThemeJson(c: Context, pkg: String, json: String?) {
+        val e = sp(c).edit()
+        if (json == null) e.remove("inbox_theme_$pkg") else e.putString("inbox_theme_$pkg", json)
+        e.apply()
+    }
+
     const val FILTER_CONTAINS = "contains"
     const val FILTER_STARTS = "starts"
     const val FILTER_ENDS = "ends"
