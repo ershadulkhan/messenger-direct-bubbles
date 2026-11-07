@@ -213,13 +213,23 @@ object OverlayController {
     private fun applyBubbleSize(v: View) {
         val a = app ?: return
         val size = Prefs.bubbleSize(a)
-        // The window wraps its content: 6dp padding around the avatar leaves room for the shadow.
-        v.setPadding(dp(6), dp(6), dp(6), dp(6))
+        v.setPadding(0, 0, 0, 0)
+        val m = 10
         val av = v.findViewById<View>(R.id.bubble_avatar)
-        (av.layoutParams as android.widget.FrameLayout.LayoutParams).apply { width = dp(size); height = dp(size) }
+        (av.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
+            width = dp(size); height = dp(size); setMargins(dp(m), dp(m), dp(m), dp(m))
+        }
+        // Badges sit centred on the avatar's circle edge (45 degrees), like Messenger.
+        val bs = (size * 0.40f).toInt().coerceAtLeast(18)
+        val off = (m + size * 0.146f - bs / 2f).toInt()
         val badge = v.findViewById<View>(R.id.bubble_badge)
-        val bs = (size * 0.38f).toInt().coerceAtLeast(16)
-        (badge.layoutParams as android.widget.FrameLayout.LayoutParams).apply { width = dp(bs); height = dp(bs) }
+        (badge.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
+            width = dp(bs); height = dp(bs); marginEnd = dp(off.coerceAtLeast(0)); bottomMargin = dp(off.coerceAtLeast(0))
+        }
+        val cnt = v.findViewById<View>(R.id.bubble_unread)
+        (cnt.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
+            marginEnd = dp((off + 1).coerceAtLeast(0)); topMargin = dp((off + 1).coerceAtLeast(0))
+        }
     }
 
     private fun bindBubble() {
@@ -232,7 +242,9 @@ object OverlayController {
             avatar.setImageBitmap(AppIcons.big(ui, ui.packageName))
             badge.visibility = View.GONE
             val unreadT = v.findViewById<TextView>(R.id.bubble_unread)
-            unreadT.visibility = View.GONE
+            val tu = ChatStore.totalUnread()
+            unreadT.visibility = if (tu > 0) View.VISIBLE else View.GONE
+            unreadT.text = if (tu > 99) "99+" else tu.toString()
             v.contentDescription = "Direct Bubbles inbox"
             return
         }

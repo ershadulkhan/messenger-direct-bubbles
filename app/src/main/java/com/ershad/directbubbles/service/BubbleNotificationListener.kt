@@ -164,6 +164,27 @@ class BubbleNotificationListener : NotificationListenerService() {
          * Looks through the notifications currently in the shade for a fresh Reply action for [conv].
          * Used when the cached action has expired, so a reply can still go out.
          */
+        /** All live reply buttons for this chat from the notification shade (several variants may exist). */
+        fun freshRepliesFor(conv: Conversation): List<Notification.Action> {
+            val l = instance ?: return emptyList()
+            return try {
+                val wanted = ChatStore.normalize(conv.title)
+                val out = ArrayList<Notification.Action>()
+                for (sbn in l.activeNotifications ?: emptyArray()) {
+                    if (sbn.packageName != conv.pkg) continue
+                    val p = NotificationParser.parse(l, sbn) as? Parsed.Chat ?: continue
+                    val b = p.batch
+                    if (b.key == conv.key || ChatStore.normalize(b.title) == wanted) {
+                        ChatStore.attachActions(b)
+                        out.addAll(NotificationParser.allReplyActions(sbn.notification))
+                    }
+                }
+                out
+            } catch (t: Throwable) {
+                emptyList()
+            }
+        }
+
         fun freshReplyFor(conv: Conversation): Notification.Action? {
             val l = instance ?: return null
             return try {

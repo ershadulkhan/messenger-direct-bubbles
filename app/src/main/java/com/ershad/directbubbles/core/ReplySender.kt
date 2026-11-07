@@ -23,12 +23,12 @@ object ReplySender {
      * frozen WhatsApp/Instagram only received the reply much later (or never). FLAG_RECEIVER_FOREGROUND
      * delivers it immediately, like the system notification shade does.
      */
-    fun send(ctx: Context, action: Notification.Action, text: String): Boolean {
+    fun send(ctx: Context, action: Notification.Action, text: String, foreground: Boolean = true): Boolean {
         val inputs = action.remoteInputs ?: return false
         if (inputs.isEmpty()) return false
         val pi = action.actionIntent ?: return false
         return try {
-            val intent = Intent().addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_FOREGROUND)
+            val intent = Intent().addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES or (if (foreground) Intent.FLAG_RECEIVER_FOREGROUND else 0))
             val bundle = Bundle()
             for (remoteInput in inputs) {
                 bundle.putCharSequence(remoteInput.resultKey, text)

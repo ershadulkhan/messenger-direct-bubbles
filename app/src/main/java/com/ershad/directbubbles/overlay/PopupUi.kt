@@ -346,7 +346,10 @@ class PopupUi(
             v.findViewById<ImageView>(R.id.head_avatar).setImageBitmap(AppIcons.big(ctx, pkg))
             v.findViewById<View>(R.id.head_badge).visibility = View.GONE
             val unread = ChatStore.all().any { it.pkg == pkg && it.unread > 0 } || ChatStore.unreadActivity(pkg) > 0
-            v.findViewById<View>(R.id.head_dot).visibility = if (unread) View.VISIBLE else View.GONE
+            val pu = ChatStore.all().filter { it.pkg == pkg }.sumOf { it.unread }
+            val dotP = v.findViewById<TextView>(R.id.head_dot)
+            dotP.visibility = if (unread) View.VISIBLE else View.GONE
+            dotP.text = if (pu > 99) "99+" else if (pu > 0) pu.toString() else ""
             val selected = currentKey == null && currentInboxPkg == pkg
             v.findViewById<View>(R.id.head_ring).visibility = if (selected) View.VISIBLE else View.INVISIBLE
             if (selected) selectedHead = v
@@ -368,7 +371,9 @@ class PopupUi(
             val v = inflater.inflate(R.layout.item_head, headsRow, false)
             v.findViewById<ImageView>(R.id.head_avatar).setImageBitmap(Avatars.forConv(c))
             v.findViewById<ImageView>(R.id.head_badge).setImageBitmap(AppIcons.badge(ctx, c.pkg))
-            v.findViewById<View>(R.id.head_dot).visibility = if (c.unread > 0) View.VISIBLE else View.GONE
+            val dotC = v.findViewById<TextView>(R.id.head_dot)
+            dotC.visibility = if (c.unread > 0) View.VISIBLE else View.GONE
+            dotC.text = if (c.unread > 99) "99+" else c.unread.toString()
             val selected = c.key == currentKey
             v.findViewById<View>(R.id.head_ring).visibility = if (selected) View.VISIBLE else View.INVISIBLE
             if (selected) selectedHead = v
@@ -584,14 +589,20 @@ class PopupUi(
      * shade — Instagram replaces its notification, and the newest button is the one it expects),
      * then the cached one as a backup.
      */
-    private fun deliver(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+    /** How many times each message was re-sent; every retry tries the next reply button variant. */
+    private val attempts = HashMap<String, Int>()
+
+    private fun deliver(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage, attempt: Int = 0) {
         val appCtx = ctx.applicationContext
         BubbleNotificationListener.ensureConnected(appCtx)
-        val fresh = BubbleNotificationListener.freshReplyFor(c)
-        val candidates = listOfNotNull(fresh, c.replyAction).distinct()
+        val fresh = BubbleNotificationListener.freshRepliesFor(c)
+        val all = (fresh + listOfNotNull(c.replyAction)).distinct()
+        // Retry N starts from the Nth variant, so a button Instagram ignores is not repeated forever.
+        val candidates = if (all.isEmpty()) all else all.drop(attempt % all.size) + all.take(attempt % all.size)
+        attempts[c.key + "\u0000" + m.text] = attempt
         var ok = false
         for (a in candidates) {
-            if (ReplySender.send(appCtx, a, m.text)) {
+            if (ReplySender.send(appCtx, a, m.text, attempt % 2 == 0)) {
                 c.replyAction = a
                 ok = true
                 break
@@ -613,8 +624,10 @@ class PopupUi(
     /** Tap on my failed / unconfirmed message: send it again. */
     private fun retry(m: ChatMessage) {
         val c = ChatStore.get(currentKey) ?: return
+        val k = c.key + "\u0000" + m.text
+        val next = (attempts[k] ?: 0) + 1
         ChatStore.removeMessage(c, m)
-        deliver(c, ChatStore.addOutgoing(c, m.text))
+        deliver(c, ChatStore.addOutgoing(c, m.text), next)
     }
 
     private fun styleTab(tab: TextView, selected: Boolean) {

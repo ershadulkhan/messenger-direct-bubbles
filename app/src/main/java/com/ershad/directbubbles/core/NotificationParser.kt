@@ -284,6 +284,12 @@ object NotificationParser {
     }
 
     /** Finds the inline-reply action (with a free-text RemoteInput and a live PendingIntent). */
+    /** Every action that can take typed text (standard, Wear and car variants), best first. */
+    fun allReplyActions(n: Notification): List<Notification.Action> {
+        val list = allActions(n).filter { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true && a.actionIntent != null }
+        return list.sortedBy { if (it.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY) 0 else 1 }
+    }
+
     fun findReplyAction(n: Notification): Notification.Action? {
         val all = allActions(n)
         fun Notification.Action.canType(): Boolean =
