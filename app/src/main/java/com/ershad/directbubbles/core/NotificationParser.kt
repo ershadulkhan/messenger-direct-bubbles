@@ -121,13 +121,29 @@ object NotificationParser {
         if (bmp == null) bmp = extras.get(Notification.EXTRA_LARGE_ICON) as? Bitmap
         val avatar = bmp?.let { Avatars.circle(it) }
 
-        return ChatStore.Batch(key, pkg, cleanTitle, isGroup, own, avatar, items, reply, n.contentIntent)
+        return ChatStore.Batch(key, pkg, cleanTitle, isGroup, own, avatar, items, reply, n.contentIntent, findMarkReadAction(n))
     }
 
     private fun loadIcon(ctx: Context, icon: Icon): Bitmap? = try {
         icon.loadDrawable(ctx)?.let { Avatars.fromDrawable(it) }
     } catch (e: Exception) {
         null
+    }
+
+    private val MARK_READ_TITLE = Regex("(?i)(mark.*read|^read$|als gelesen|marcar como le)")
+
+    /** Finds the app's "Mark as read" action (WhatsApp, Messenger, Telegram, Signal...). */
+    fun findMarkReadAction(n: Notification): Notification.Action? {
+        val all = ArrayList<Notification.Action>()
+        n.actions?.let { all.addAll(it) }
+        try {
+            all.addAll(Notification.WearableExtender(n).actions)
+        } catch (e: Exception) {
+        }
+        return all.firstOrNull { it.semanticAction == Notification.Action.SEMANTIC_ACTION_MARK_AS_READ }
+            ?: all.firstOrNull { a ->
+                a.remoteInputs.isNullOrEmpty() && a.title?.toString()?.let { MARK_READ_TITLE.containsMatchIn(it.trim()) } == true
+            }
     }
 
     /** Finds the inline-reply action, checking both normal actions and Wear OS actions. */

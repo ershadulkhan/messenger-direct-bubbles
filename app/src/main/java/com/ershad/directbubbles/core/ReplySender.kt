@@ -33,6 +33,15 @@ object ReplySender {
         }
     }
 
+    /** Presses a simple notification button (e.g. "Mark as read"). */
+    fun fire(action: Notification.Action): Boolean = try {
+        action.actionIntent.send()
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "action failed", e)
+        false
+    }
+
     @Suppress("DEPRECATION")
     /** Opens the exact chat in Instagram/WhatsApp via the original notification's tap action. */
     fun open(ctx: Context, pi: PendingIntent?, pkg: String): Boolean {

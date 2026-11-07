@@ -128,11 +128,19 @@
 
             <TextView
                 style="@style/CardTitle"
-                android:text="Apps that get chat bubbles" />
+                android:text="Apps &amp; chat settings" />
 
             <TextView
                 android:id="@+id/apps_summary"
                 style="@style/CardBody" />
+
+            <!-- One row per app: tap for Auto Mark as Read, Themes and Filters -->
+            <LinearLayout
+                android:id="@+id/apps_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical" />
 
             <Button
                 android:id="@+id/btn_apps"

@@ -31,6 +31,15 @@ If Android asks, allow your browser to *install unknown apps*. Each new build in
 | 🔕 **Panel entry** | While a bubble is on screen, a silent notification lets you reopen the inbox or hide the bubbles. |
 | ⚙️ **Any app** | Instagram and WhatsApp (plus WhatsApp Business) are on by default. *Choose apps* adds Messenger, Telegram, Signal, SMS and others. |
 
+### Per-app settings (Main screen → app → Settings ›)
+- **Auto Mark as Read**: when you open a chat in the popup, the app's own *Mark as read* button is pressed for you (the sender sees it as read). Off by default.
+- **Themes**: presets (Messenger AMOLED, Messenger Light, WhatsApp Light/Dark, AMOLED Dark, Instagram Dark), every colour (title bar, chat background, incoming/outgoing bubbles and text, send button, input field and text), gradient bubbles, bubble style (rounded / classic with tail / square) and input style (pill / pill + round send / flat bar). Live preview, plus **Test** to see it in a real chat head.
+- **Filter Chats**: hide chat heads for chat titles that contain, start with or end with keywords (comma-separated).
+
+Dark mode uses true **AMOLED black** by default.
+
+**Closing one chat head:** in the popup, drag a person's head (top row) down onto the **X**. Dragging the floating head onto the X closes all of them.
+
 Tip: long-press a chat in the inbox to remove it from this app (it is not deleted from Instagram/WhatsApp).
 
 ## Privacy & battery

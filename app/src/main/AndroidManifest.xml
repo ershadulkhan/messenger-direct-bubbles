@@ -34,6 +34,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".settings.AppSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".settings.ThemeActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Invisible: opens the popup chat window from a notification tap (also closes the shade). -->
         <activity
             android:name=".overlay.OpenPopupActivity"

@@ -36,6 +36,7 @@ class BubbleNotificationListener : NotificationListenerService() {
             val pkg = sbn.packageName
             if (pkg != packageName && pkg !in Prefs.enabledApps(this)) return
             val batch = NotificationParser.parse(this, sbn) ?: return
+            if (Prefs.isFiltered(this, batch.pkg, batch.title)) return   // per-app keyword filters
             ChatStore.init(this)
             val added = ChatStore.ingest(batch)
             if (added > 0) {

@@ -12,7 +12,9 @@ import com.ershad.directbubbles.R
 import com.ershad.directbubbles.core.AppIcons
 import com.ershad.directbubbles.core.Avatars
 import com.ershad.directbubbles.core.ChatMessage
+import com.ershad.directbubbles.core.ChatTheme
 import com.ershad.directbubbles.core.Conversation
+import com.ershad.directbubbles.core.Themes
 import com.ershad.directbubbles.core.TimeFmt
 
 /** Inbox rows: [avatar + app badge] | name | latest message · time | unread count. Newest on top. */
@@ -52,6 +54,8 @@ class InboxAdapter(private val ctx: Context) : BaseAdapter() {
 /** One person's messages, one below another: theirs on the left, mine on the right. */
 class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
     private var conv: Conversation? = null
+    /** Per-app chat theme (colors, bubble style). */
+    var theme: ChatTheme? = null
     private var items: List<ChatMessage> = emptyList()
 
     fun setData(c: Conversation) {
@@ -81,7 +85,14 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
         } else {
             header.visibility = View.GONE
         }
-        v.findViewById<TextView>(R.id.msg_text).text = m.text
+        val msgText = v.findViewById<TextView>(R.id.msg_text)
+        msgText.text = m.text
+        val t = theme
+        if (t != null) {
+            Themes.styleBubble(msgText, t, m.outgoing)
+            header.setTextColor(Themes.subtleOn(t.chatBg))
+            if (!m.outgoing) v.findViewById<TextView>(R.id.msg_sender).setTextColor(Themes.subtleOn(t.chatBg))
+        }
 
         if (m.outgoing) {
             val status = v.findViewById<TextView>(R.id.msg_status)

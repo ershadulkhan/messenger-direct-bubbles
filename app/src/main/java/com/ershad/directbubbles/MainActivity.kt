@@ -12,7 +12,12 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
+import android.graphics.drawable.GradientDrawable
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.view.WindowInsets
 import android.widget.Button
 import android.widget.Switch
@@ -21,6 +26,8 @@ import android.widget.Toast
 import com.ershad.directbubbles.core.AppIcons
 import com.ershad.directbubbles.core.ChatStore
 import com.ershad.directbubbles.core.Prefs
+import com.ershad.directbubbles.core.Themes
+import com.ershad.directbubbles.settings.AppSettingsActivity
 import com.ershad.directbubbles.overlay.OverlayController
 import com.ershad.directbubbles.service.BubbleNotificationListener
 import com.ershad.directbubbles.sim.Simulator
@@ -139,14 +146,62 @@ class MainActivity : Activity() {
             cardPost.visibility = View.GONE
         }
 
-        val labels = Prefs.enabledApps(this).map { AppIcons.label(this, it) }.sorted()
-        appsSummary.text = if (labels.isEmpty()) "No apps selected" else labels.joinToString(", ")
+        val apps = Prefs.enabledApps(this).sortedBy { AppIcons.label(this, it).lowercase() }
+        appsSummary.text = if (apps.isEmpty()) "No apps selected"
+        else "Tap an app for Auto Mark as Read, chat Themes and Filters."
+        buildAppRows(apps)
 
         switchBubbles.setOnCheckedChangeListener(null)
         switchBubbles.isChecked = Prefs.bubblesOn(this)
         switchBubbles.setOnCheckedChangeListener { _, on ->
             Prefs.setBubblesOn(this, on)
             if (!on) OverlayController.dismissAll()
+        }
+    }
+
+    /** One row per enabled app: icon, name, current theme colour, "Settings ›". */
+    private fun buildAppRows(apps: List<String>) {
+        val list = findViewById<LinearLayout>(R.id.apps_list)
+        list.removeAllViews()
+        val d = resources.displayMetrics.density
+        for (pkg in apps) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.setPadding(0, (8 * d).toInt(), 0, (8 * d).toInt())
+            val tv = TypedValue()
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            if (tv.resourceId != 0) row.setBackgroundResource(tv.resourceId)
+
+            val icon = ImageView(this)
+            icon.setImageBitmap(AppIcons.badge(this, pkg))
+            row.addView(icon, LinearLayout.LayoutParams((34 * d).toInt(), (34 * d).toInt()))
+
+            val name = TextView(this)
+            name.text = AppIcons.label(this, pkg)
+            name.setTextColor(getColor(R.color.text_primary))
+            name.textSize = 16f
+            val np = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            np.marginStart = (12 * d).toInt()
+            row.addView(name, np)
+
+            val dot = View(this)
+            val g = GradientDrawable()
+            g.shape = GradientDrawable.OVAL
+            g.setColor(Themes.forPkg(this, pkg).titleBar)
+            g.setStroke((1 * d).toInt(), 0x55888888)
+            dot.background = g
+            row.addView(dot, LinearLayout.LayoutParams((18 * d).toInt(), (18 * d).toInt()))
+
+            val go = TextView(this)
+            go.text = "Settings ›"
+            go.setTextColor(getColor(R.color.brand_blue))
+            go.textSize = 14f
+            go.setPadding((10 * d).toInt(), 0, 0, 0)
+            row.addView(go)
+
+            row.setOnClickListener { startActivity(AppSettingsActivity.intent(this, pkg)) }
+            list.addView(row)
         }
     }
 

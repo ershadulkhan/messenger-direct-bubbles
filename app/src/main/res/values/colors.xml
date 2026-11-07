@@ -8,6 +8,8 @@
     <color name="dim">#73000000</color>
     <color name="window_bg">#FFF0F2F5</color>
     <color name="panel_bg">#FFFFFFFF</color>
+    <color name="card_bg">#FFFFFFFF</color>
+    <color name="section">#FFD9534F</color>
     <color name="surface">#FFF0F2F5</color>
     <color name="bubble_in">#FFE9EBEF</color>
     <color name="divider">#FFE4E6EB</color>

@@ -136,6 +136,7 @@
             android:visibility="gone">
 
             <LinearLayout
+                android:id="@+id/thread_header"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
@@ -232,6 +233,7 @@
             </LinearLayout>
 
             <View
+                android:id="@+id/thread_divider"
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:background="@color/divider" />
@@ -263,6 +265,7 @@
                 android:visibility="gone" />
 
             <LinearLayout
+                android:id="@+id/input_bar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
@@ -303,4 +306,33 @@
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
+
+    <!-- Drag a chat head down onto this X to close just that person's chat head -->
+    <FrameLayout
+        android:id="@+id/popup_dismiss"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_dismiss_shadow"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/popup_dismiss_x"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="48dp"
+            android:background="@drawable/bg_dismiss"
+            android:contentDescription="Close chat head"
+            android:padding="18dp"
+            android:src="@drawable/ic_close" />
+    </FrameLayout>
+
+    <ImageView
+        android:id="@+id/drag_ghost"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:contentDescription="Dragging chat head"
+        android:elevation="16dp"
+        android:visibility="gone" />
 </com.ershad.directbubbles.overlay.PopupRootLayout>

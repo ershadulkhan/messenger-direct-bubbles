@@ -34,6 +34,8 @@ class Conversation(val key: String, val pkg: String, var title: String) {
     /** Cached in memory so several replies can be sent even after the system notification is gone. */
     var replyAction: Notification.Action? = null
     var contentIntent: PendingIntent? = null
+    /** The app's own "Mark as read" button (used by Auto Mark as Read). */
+    var markReadAction: Notification.Action? = null
 
     val last: ChatMessage? get() = messages.lastOrNull()
 

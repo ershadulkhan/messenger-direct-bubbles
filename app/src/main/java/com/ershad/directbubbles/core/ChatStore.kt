@@ -48,6 +48,7 @@ object ChatStore {
         val items: List<Item>,
         val reply: Notification.Action?,
         val content: PendingIntent?,
+        val markRead: Notification.Action? = null,
     )
 
     private val convs = HashMap<String, Conversation>()
@@ -83,6 +84,7 @@ object ChatStore {
         c.simulated = b.simulated
         if (b.reply != null) c.replyAction = b.reply
         if (b.content != null) c.contentIntent = b.content
+        if (b.markRead != null) c.markReadAction = b.markRead
         val newAvatar = b.avatar
         if (newAvatar != null) {
             val old = c.avatar
@@ -134,6 +136,15 @@ object ChatStore {
     fun markRead(c: Conversation) {
         if (c.unread > 0) {
             c.unread = 0
+            notifyChanged()
+        }
+    }
+
+    /** Shows or hides one person's chat head. */
+    fun setActive(key: String, on: Boolean) {
+        val c = convs[key] ?: return
+        if (c.active != on) {
+            c.active = on
             notifyChanged()
         }
     }
