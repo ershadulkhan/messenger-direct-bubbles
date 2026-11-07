@@ -126,10 +126,19 @@ object ChatStore {
             changed = true
             val recent = c.messages.takeLast(20)
             if (it.outgoing) {
-                // The app echoes back replies we sent from the popup: don't show them twice.
-                val echo = recent.any { m -> m.outgoing && m.text == it.text && abs(m.time - it.time) < 10 * 60_000L }
-                if (echo) continue
-                c.messages.add(ChatMessage(it.text, it.time, true))
+                // The app echoes back replies we sent from the popup (Instagram sometimes as
+                // "username: text"): don't show them twice — mark ours as delivered (✓✓) instead.
+                val bare = stripSenderPrefix(it.text)
+                val echo = recent.lastOrNull { m ->
+                    m.outgoing && (m.text == it.text || m.text == bare) && abs(m.time - it.time) < 10 * 60_000L
+                }
+                if (echo != null) {
+                    if (echo.status == ChatMessage.STATUS_OK || echo.status == ChatMessage.STATUS_SENDING) {
+                        echo.status = ChatMessage.STATUS_CONFIRMED
+                    }
+                    continue
+                }
+                c.messages.add(ChatMessage(bare, it.time, true))
             } else if (it.kind == ChatMessage.KIND_CALL) {
                 // One call entry per call (call notifications are re-posted while ringing).
                 val dup = recent.any { m -> m.kind == ChatMessage.KIND_CALL && abs(m.time - it.time) < 3 * 60_000L }
@@ -167,6 +176,29 @@ object ChatStore {
         return added
     }
 
+    private val SENDER_PREFIX = Regex("^[^:\\n]{1,40}:\\s+")
+
+    private fun stripSenderPrefix(s: String): String = s.replaceFirst(SENDER_PREFIX, "")
+
+    /**
+     * The app removed its notification right after I replied (WhatsApp does this once the reply is
+     * sent) -> count my recent replies as delivered.
+     */
+    fun confirmRecentReplies(c: Conversation) {
+        val now = System.currentTimeMillis()
+        var any = false
+        for (m in c.messages.takeLast(10)) {
+            if (m.outgoing && m.status == ChatMessage.STATUS_OK && now - m.time < 60_000L) {
+                m.status = ChatMessage.STATUS_CONFIRMED
+                any = true
+            }
+        }
+        if (any) {
+            touch(c)
+            notifyChanged()
+        }
+    }
+
     /** Refreshes only the live reply / open / mark-read buttons of a chat (no new messages). */
     fun attachActions(b: Batch) {
         val c = convs[b.key] ?: return
@@ -199,6 +231,13 @@ object ChatStore {
         touch(c)
         notifyChanged()
         return m
+    }
+
+    fun removeMessage(c: Conversation, m: ChatMessage) {
+        if (c.messages.remove(m)) {
+            touch(c)
+            notifyChanged()
+        }
     }
 
     fun markRead(c: Conversation) {

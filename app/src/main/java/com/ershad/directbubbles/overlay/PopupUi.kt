@@ -100,6 +100,10 @@ class PopupUi(
     init {
         inboxList.adapter = inboxAdapter
         threadList.adapter = threadAdapter
+        threadList.setOnItemClickListener { _, _, position, _ ->
+            val m = threadAdapter.getItem(position)
+            if (ThreadAdapter.canRetry(m)) retry(m)
+        }
 
         root.onBack = { onCollapse() }                     // Back minimizes to the floating bubble
         root.setOnClickListener { onCollapse() }           // tap on the transparent space
@@ -212,7 +216,12 @@ class PopupUi(
         buildHeads()
         val key = currentKey
         if (key == null) {
-            val pkg = currentInboxPkg ?: platforms().first()
+            val pkg = currentInboxPkg?.takeIf { it !in hiddenPlatforms } ?: platforms().firstOrNull() ?: run {
+                // Every app bubble is closed: show a person, or minimize.
+                val person = ChatStore.activeOnes().firstOrNull()
+                if (person != null) showThread(person.key) else onCollapse()
+                return
+            }
             currentInboxPkg = pkg
             val label = AppIcons.label(ctx, pkg)
             val list = ChatStore.all().filter { it.pkg == pkg }   // only this app's chats
@@ -291,7 +300,40 @@ class PopupUi(
         for (p in order) if (p in enabled || ChatStore.all().any { it.pkg == p }) set.add(p)
         for (c in ChatStore.all()) set.add(c.pkg)
         if (set.isEmpty()) set.addAll(listOf("com.instagram.android", "com.whatsapp"))
+        // App bubbles you dragged to the X stay closed until that app gets a new message.
+        set.removeAll(hiddenPlatforms)
         return set.sortedBy { val i = order.indexOf(it); if (i < 0) 99 else i }
+    }
+
+    companion object {
+        /** App inbox bubbles closed by dragging them to the X (kept while the app runs). */
+        private val hiddenPlatforms = HashSet<String>()
+
+        /** A new message from [pkg] brings its inbox bubble back. */
+        fun unhidePlatform(pkg: String) {
+            hiddenPlatforms.remove(pkg)
+        }
+
+        fun resetHiddenPlatforms() {
+            hiddenPlatforms.clear()
+        }
+    }
+
+    /** Closes one app's inbox bubble (Instagram / WhatsApp); everything else stays. */
+    private fun closePlatform(pkg: String) {
+        hiddenPlatforms.add(pkg)
+        if (currentKey == null && currentInboxPkg == pkg) {
+            currentInboxPkg = null
+            val next = platforms().firstOrNull()
+            val person = ChatStore.activeOnes().firstOrNull()
+            when {
+                next != null -> showInbox(next)
+                person != null -> showThread(person.key)
+                else -> onCollapse()     // nothing left open
+            }
+        } else {
+            refresh()
+        }
     }
 
     private fun buildHeads() {
@@ -308,11 +350,14 @@ class PopupUi(
             val selected = currentKey == null && currentInboxPkg == pkg
             v.findViewById<View>(R.id.head_ring).visibility = if (selected) View.VISIBLE else View.INVISIBLE
             if (selected) selectedHead = v
-            v.contentDescription = "${AppIcons.label(ctx, pkg)} inbox"
-            v.setOnClickListener {
-                // Tapping the open inbox again minimizes; tapping another switches.
-                if (currentKey == null && currentInboxPkg == pkg) onCollapse() else showInbox(pkg)
-            }
+            v.contentDescription = "${AppIcons.label(ctx, pkg)} inbox. Drag down to close."
+            v.setOnTouchListener(
+                HeadTouch(
+                    // Tapping the open inbox again minimizes; tapping another switches.
+                    onTap = { if (currentKey == null && currentInboxPkg == pkg) onCollapse() else showInbox(pkg) },
+                    onDrop = { closePlatform(pkg) },
+                )
+            )
             headsRow.addView(v)
         }
         // A small gap between app inboxes and people.
@@ -328,7 +373,13 @@ class PopupUi(
             v.findViewById<View>(R.id.head_ring).visibility = if (selected) View.VISIBLE else View.INVISIBLE
             if (selected) selectedHead = v
             v.contentDescription = "${c.title}. Tap again to minimize, drag down to close."
-            v.setOnTouchListener(HeadTouch(c.key))
+            v.setOnTouchListener(
+                HeadTouch(
+                    // Tapping the open person again minimizes; tapping another person switches.
+                    onTap = { if (currentKey == c.key) onCollapse() else showThread(c.key) },
+                    onDrop = { closeHead(c.key) },
+                )
+            )
             headsRow.addView(v)
         }
         headsRow.post {
@@ -362,12 +413,15 @@ class PopupUi(
         topArrow.translationX = center.coerceIn(lo, hi) - topArrow.width / 2f
     }
 
-    private fun showInbox(pkg: String?) {
+    private fun showInbox(requested: String?) {
         hideKeyboard()
+        // Never open the inbox of an app whose bubble you closed.
+        val pkg = requested?.takeIf { it !in hiddenPlatforms }
+        if (currentInboxPkg in hiddenPlatforms) currentInboxPkg = null
         val switching = currentKey != null || (pkg != null && pkg != currentInboxPkg)
         if (pkg != null && pkg != currentInboxPkg) showingActivity = false
         if (pkg != null) currentInboxPkg = pkg
-        else if (currentInboxPkg == null) currentInboxPkg = platforms().first()
+        else if (currentInboxPkg == null) currentInboxPkg = platforms().firstOrNull()
         currentKey = null
         if (switching) inboxContainer.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.thread_enter))
         threadContainer.visibility = View.GONE
@@ -398,7 +452,10 @@ class PopupUi(
 
     // ---------------- drag a chat head to the X ----------------
 
-    private inner class HeadTouch(private val key: String) : View.OnTouchListener {
+    private inner class HeadTouch(
+        private val onTap: () -> Unit,
+        private val onDrop: () -> Unit,
+    ) : View.OnTouchListener {
         private var downX = 0f
         private var downY = 0f
         private var dragging = false
@@ -439,16 +496,13 @@ class PopupUi(
                 }
                 MotionEvent.ACTION_UP -> {
                     v.isPressed = false
-                    if (dragging) finishDrag(v, inTarget, key)
-                    else if (!moved) {
-                        // Tapping the open person again minimizes; tapping another person switches.
-                        if (currentKey == key) onCollapse() else showThread(key)
-                    }
+                    if (dragging) finishDrag(v, inTarget, onDrop)
+                    else if (!moved) onTap()
                     dragging = false
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     v.isPressed = false
-                    if (dragging) finishDrag(v, false, key)
+                    if (dragging) finishDrag(v, false, onDrop)
                     dragging = false
                 }
             }
@@ -486,11 +540,11 @@ class PopupUi(
         return near
     }
 
-    private fun finishDrag(head: View, drop: Boolean, key: String) {
+    private fun finishDrag(head: View, drop: Boolean, onDrop: () -> Unit) {
         if (drop) {
             ghost.animate().scaleX(0f).scaleY(0f).alpha(0f).setDuration(160).withEndAction {
                 endDragUi()
-                closeHead(key)
+                onDrop()
             }.start()
         } else {
             // Fly back to its place in the row.
@@ -520,34 +574,47 @@ class PopupUi(
         val text = input.text.toString().trim()
         if (text.isEmpty()) return
         val c = ChatStore.get(currentKey) ?: return
-        // Cached reply button for this chat; if missing, look for a fresh one in the notification shade.
-        val action = c.replyAction ?: BubbleNotificationListener.freshReplyFor(c)?.also { c.replyAction = it }
-        if (action == null) {
-            Toast.makeText(
-                ctx.applicationContext,
-                "No reply button for this chat right now. It comes back with their next message, or open the app.",
-                Toast.LENGTH_LONG
-            ).show()
-            return
-        }
-        // 1) Show my message immediately, 2) send it through Instagram/WhatsApp's own reply action.
-        val m = ChatStore.addOutgoing(c, text)
         input.setText("")
-        var ok = ReplySender.send(ctx.applicationContext, action, text)
-        if (!ok) {
-            // The cached button expired: retry once with a fresh one from the shade.
-            val fresh = BubbleNotificationListener.freshReplyFor(c)
-            if (fresh != null && fresh !== action) {
-                c.replyAction = fresh
-                ok = ReplySender.send(ctx.applicationContext, fresh, text)
+        // 1) Show my message immediately, 2) send it through Instagram/WhatsApp's own reply action.
+        deliver(c, ChatStore.addOutgoing(c, text))
+    }
+
+    /**
+     * Sends one reply. Uses the FRESHEST reply button first (from the notification currently in the
+     * shade — Instagram replaces its notification, and the newest button is the one it expects),
+     * then the cached one as a backup.
+     */
+    private fun deliver(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+        val appCtx = ctx.applicationContext
+        BubbleNotificationListener.ensureConnected(appCtx)
+        val fresh = BubbleNotificationListener.freshReplyFor(c)
+        val candidates = listOfNotNull(fresh, c.replyAction).distinct()
+        var ok = false
+        for (a in candidates) {
+            if (ReplySender.send(appCtx, a, m.text)) {
+                c.replyAction = a
+                ok = true
+                break
             }
         }
         m.status = if (ok) ChatMessage.STATUS_OK else ChatMessage.STATUS_FAILED
         if (!ok) {
             c.replyAction = null
-            Toast.makeText(ctx.applicationContext, "Not sent — the reply button expired. Open the app to reply.", Toast.LENGTH_LONG).show()
+            val msg = if (candidates.isEmpty()) "No reply button for this chat right now. It comes back with their next message, or open the app."
+            else "Not sent — the reply button expired. Tap the message to retry, or open the app."
+            Toast.makeText(appCtx, msg, Toast.LENGTH_LONG).show()
+        } else {
+            // One-shot check later: shows "Not confirmed yet" if the app never confirmed it.
+            root.postDelayed({ if (attached) refresh() }, ThreadAdapter.UNCONFIRMED_AFTER_MS + 500)
         }
         ChatStore.notifyChanged()
+    }
+
+    /** Tap on my failed / unconfirmed message: send it again. */
+    private fun retry(m: ChatMessage) {
+        val c = ChatStore.get(currentKey) ?: return
+        ChatStore.removeMessage(c, m)
+        deliver(c, ChatStore.addOutgoing(c, m.text))
     }
 
     private fun styleTab(tab: TextView, selected: Boolean) {

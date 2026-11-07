@@ -65,6 +65,21 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
         notifyDataSetChanged()
     }
 
+    /** Only the last few of my replies can show "Not confirmed yet". */
+    private fun isRecentOwn(position: Int): Boolean = position >= items.size - 5
+
+    companion object {
+        const val UNCONFIRMED_AFTER_MS = 25_000L
+
+        /** Can this outgoing message be sent again by tapping it? */
+        fun canRetry(m: ChatMessage): Boolean {
+            if (!m.outgoing) return false
+            if (m.status == ChatMessage.STATUS_FAILED) return true
+            val age = System.currentTimeMillis() - m.time
+            return m.status == ChatMessage.STATUS_OK && age in UNCONFIRMED_AFTER_MS..(10 * 60_000L)
+        }
+    }
+
     override fun getCount(): Int = items.size
     override fun getItem(position: Int): ChatMessage = items[position]
     override fun getItemId(position: Int): Long = position.toLong()
@@ -94,7 +109,14 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
         } else m.text
         // Exact time inside every bubble: "06:11 pm" (or 18:11 with 24-hour time).
         val timeTv = v.findViewById<TextView>(R.id.msg_time)
-        timeTv.text = TimeFmt.time(ctx, m.time) + if (m.outgoing && m.status == ChatMessage.STATUS_OK) " ✓" else ""
+        // ✓ = handed to Instagram/WhatsApp, ✓✓ = the app confirmed it.
+        timeTv.text = TimeFmt.time(ctx, m.time) + when {
+            !m.outgoing -> ""
+            m.status == ChatMessage.STATUS_CONFIRMED -> " ✓✓"
+            m.status == ChatMessage.STATUS_OK -> " ✓"
+            m.status == ChatMessage.STATUS_SENDING -> " ⏳"
+            else -> ""
+        }
         val bubble = v.findViewById<View>(R.id.msg_bubble)
         val t = theme
         if (t != null) {
@@ -106,10 +128,18 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
 
         if (m.outgoing) {
             val status = v.findViewById<TextView>(R.id.msg_status)
-            when (m.status) {
-                ChatMessage.STATUS_FAILED -> {
+            val age = System.currentTimeMillis() - m.time
+            when {
+                m.status == ChatMessage.STATUS_FAILED -> {
                     status.visibility = View.VISIBLE
-                    status.text = "Not sent"
+                    status.setTextColor(ctx.getColor(R.color.unread_red))
+                    status.text = "Not sent · tap to retry"
+                }
+                // Sent, but the app hasn't confirmed it yet after a while (only for my newest replies).
+                m.status == ChatMessage.STATUS_OK && age in UNCONFIRMED_AFTER_MS..(10 * 60_000L) && isRecentOwn(position) -> {
+                    status.visibility = View.VISIBLE
+                    status.setTextColor(ctx.getColor(R.color.text_secondary))
+                    status.text = "Not confirmed yet · tap to send again"
                 }
                 else -> status.visibility = View.GONE
             }

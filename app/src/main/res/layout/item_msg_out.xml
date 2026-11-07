@@ -25,14 +25,12 @@
         android:textSize="12sp"
         android:visibility="gone" />
 
-    <LinearLayout
+    <com.ershad.directbubbles.overlay.MessageBubbleLayout
         android:id="@+id/msg_bubble"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_bubble_out"
-        android:gravity="bottom"
-        android:orientation="horizontal"
-        android:paddingStart="13dp"
+                android:paddingStart="13dp"
         android:paddingTop="7dp"
         android:paddingEnd="11dp"
         android:paddingBottom="7dp">
@@ -41,7 +39,6 @@
             android:id="@+id/msg_text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:maxWidth="240dp"
             android:textColor="#FFFFFFFF"
             android:textSize="15sp" />
 
@@ -49,12 +46,11 @@
             android:id="@+id/msg_time"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
             android:alpha="0.75"
             android:singleLine="true"
             android:textColor="#FFFFFFFF"
             android:textSize="11sp" />
-    </LinearLayout>
+    </com.ershad.directbubbles.overlay.MessageBubbleLayout>
 
     <TextView
         android:id="@+id/msg_status"

@@ -78,6 +78,7 @@ object OverlayController {
         val a = app ?: return
         if (!Prefs.bubblesOn(a) || !canDraw()) return
         focusKey = key
+        ChatStore.get(key)?.let { PopupUi.unhidePlatform(it.pkg) }
         val p = popup
         if (p != null && p.attached) {
             p.refresh()
@@ -146,6 +147,7 @@ object OverlayController {
         }
         bubbleParams?.let { Prefs.saveBubblePos(a, it.x < screenSize().x / 2, it.y) }
         ChatStore.dismissAll()
+        PopupUi.resetHiddenPlatforms()
         popup?.let { if (it.attached) it.detach {} }
         snapAnimator?.cancel()
         dismissTarget?.let { safeRemove(it) }

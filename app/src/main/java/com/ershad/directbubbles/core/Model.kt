@@ -20,6 +20,8 @@ class ChatMessage(
         const val STATUS_OK = 0
         const val STATUS_FAILED = 1
         const val STATUS_SENDING = 2
+        /** The app confirmed it (echoed my reply in its notification, or cleared it after sending). */
+        const val STATUS_CONFIRMED = 3
     }
 }
 

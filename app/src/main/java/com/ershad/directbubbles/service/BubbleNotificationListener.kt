@@ -109,6 +109,8 @@ class BubbleNotificationListener : NotificationListenerService() {
         if (sbn == null) return
         try {
             val c: Conversation = ChatStore.onNotificationGone(sbn.key) ?: return
+            // The app cleared its notification right after my reply = the reply went through.
+            if (reason == REASON_APP_CANCEL || reason == REASON_APP_CANCEL_ALL) ChatStore.confirmRecentReplies(c)
             if (c.notifKeys.isNotEmpty()) return   // the chat still has another live notification
             // "Clear unread badge with notification": read it elsewhere -> reset our counter.
             if (Prefs.clearUnreadWithNotif(this)) ChatStore.markRead(c)
@@ -139,6 +141,18 @@ class BubbleNotificationListener : NotificationListenerService() {
         @Volatile
         private var instance: BubbleNotificationListener? = null
         private var lastRebind = 0L
+
+        /** Reconnects to Android if the listener was unbound (needed for reliable replies). */
+        fun ensureConnected(c: android.content.Context) {
+            if (connected) return
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastRebind < 15_000L) return
+            lastRebind = now
+            try {
+                requestRebind(ComponentName(c, BubbleNotificationListener::class.java))
+            } catch (_: Exception) {
+            }
+        }
 
         /** Clears the given system notifications (Preferences → Clear notifications on removed). */
         fun cancel(keys: Collection<String>) {
