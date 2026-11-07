@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.ershad.directbubbles.overlay.PopupRootLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/popup_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/dim">
+
+    <LinearLayout
+        android:id="@+id/panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_panel"
+        android:clickable="true"
+        android:elevation="12dp"
+        android:focusable="false"
+        android:orientation="vertical">
+
+        <!-- Row of chat heads (switch between people) + Inbox button -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:paddingBottom="4dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/heads_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp">
+
+                <FrameLayout
+                    android:id="@+id/btn_inbox"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:layout_marginEnd="2dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Inbox">
+
+                    <View
+                        android:id="@+id/inbox_ring"
+                        android:layout_width="58dp"
+                        android:layout_height="58dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_head_selected"
+                        android:visibility="invisible" />
+
+                    <ImageView
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_inbox_btn"
+                        android:contentDescription="Inbox"
+                        android:padding="12dp"
+                        android:src="@drawable/ic_inbox" />
+                </FrameLayout>
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/divider" />
+
+        <!-- ===== Inbox: everyone's chats, one below another ===== -->
+        <LinearLayout
+            android:id="@+id/inbox_container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingTop="10dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Chats"
+                    android:textColor="@color/text_primary"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <ImageButton
+                    android:id="@+id/btn_close_inbox"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Close"
+                    android:src="@drawable/ic_close"
+                    android:tint="@color/text_secondary" />
+            </LinearLayout>
+
+            <ListView
+                android:id="@+id/inbox_list"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:divider="@null"
+                android:dividerHeight="0dp" />
+
+            <TextView
+                android:id="@+id/inbox_empty"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:padding="32dp"
+                android:text="No chats yet.\nNew Instagram and WhatsApp DMs will appear here."
+                android:textColor="@color/text_secondary"
+                android:textSize="15sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- ===== Thread: one person's messages, one below another ===== -->
+        <LinearLayout
+            android:id="@+id/thread_container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="4dp"
+                android:paddingBottom="6dp">
+
+                <ImageButton
+                    android:id="@+id/btn_back"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Back to inbox"
+                    android:src="@drawable/ic_back"
+                    android:tint="@color/brand_blue" />
+
+                <LinearLayout
+                    android:id="@+id/thread_title_box"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="4dp">
+
+                    <FrameLayout
+                        android:layout_width="42dp"
+                        android:layout_height="42dp">
+
+                        <ImageView
+                            android:id="@+id/thread_avatar"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:contentDescription="Avatar"
+                            android:scaleType="centerCrop" />
+
+                        <ImageView
+                            android:id="@+id/thread_badge"
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:layout_gravity="bottom|end"
+                            android:background="@drawable/bg_badge_ring"
+                            android:contentDescription="App"
+                            android:padding="1.5dp" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/thread_name"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:singleLine="true"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/thread_sub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:singleLine="true"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/btn_open"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Open in app"
+                    android:src="@drawable/ic_open_in_new"
+                    android:tint="@color/brand_blue" />
+
+                <ImageButton
+                    android:id="@+id/btn_close"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Close"
+                    android:src="@drawable/ic_close"
+                    android:tint="@color/text_secondary" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/divider" />
+
+            <ListView
+                android:id="@+id/thread_list"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:clipToPadding="false"
+                android:divider="@null"
+                android:dividerHeight="0dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:stackFromBottom="true"
+                android:transcriptMode="alwaysScroll" />
+
+            <TextView
+                android:id="@+id/reply_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:paddingStart="16dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="16dp"
+                android:text="Replies unlock when this person's next message arrives."
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="10dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="4dp"
+                android:paddingBottom="10dp">
+
+                <EditText
+                    android:id="@+id/input"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_input"
+                    android:hint="Aa"
+                    android:importantForAutofill="no"
+                    android:inputType="textCapSentences|textMultiLine|textAutoCorrect"
+                    android:maxLines="5"
+                    android:minHeight="44dp"
+                    android:paddingStart="16dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="16dp"
+                    android:paddingBottom="10dp"
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_secondary"
+                    android:textSize="15sp" />
+
+                <ImageButton
+                    android:id="@+id/btn_send"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="2dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Send"
+                    android:src="@drawable/ic_send"
+                    android:tint="@color/brand_blue" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</com.ershad.directbubbles.overlay.PopupRootLayout>

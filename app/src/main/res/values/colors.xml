@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_blue">#FF0A7CFF</color>
+    <color name="brand_purple">#FFA334FA</color>
+    <color name="brand_pink">#FFFF5280</color>
+    <color name="unread_red">#FFFA383E</color>
+    <color name="ok_green">#FF31A24C</color>
+    <color name="dim">#73000000</color>
+    <color name="window_bg">#FFF0F2F5</color>
+    <color name="panel_bg">#FFFFFFFF</color>
+    <color name="surface">#FFF0F2F5</color>
+    <color name="bubble_in">#FFE9EBEF</color>
+    <color name="divider">#FFE4E6EB</color>
+    <color name="text_primary">#FF050505</color>
+    <color name="text_secondary">#FF65676B</color>
+</resources>

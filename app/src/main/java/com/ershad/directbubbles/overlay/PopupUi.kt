@@ -1,0 +1,257 @@
+package com.ershad.directbubbles.overlay
+
+import android.content.Context
+import android.graphics.PixelFormat
+import android.os.Build
+import android.view.Gravity
+import android.view.LayoutInflater
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowManager
+import android.view.animation.AnimationUtils
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ListView
+import android.widget.TextView
+import android.widget.Toast
+import com.ershad.directbubbles.R
+import com.ershad.directbubbles.core.AppIcons
+import com.ershad.directbubbles.core.Avatars
+import com.ershad.directbubbles.core.ChatMessage
+import com.ershad.directbubbles.core.ChatStore
+import com.ershad.directbubbles.core.ReplySender
+import kotlin.math.max
+
+/**
+ * The Messenger-style popup window: a row of chat heads on top, then either the
+ * vertical inbox (everyone's chats) or one person's thread with a reply bar.
+ */
+class PopupUi(
+    private val ctx: Context,
+    private val wm: WindowManager,
+    private val onCollapse: () -> Unit,
+) {
+    private val root = LayoutInflater.from(ctx).inflate(R.layout.popup_window, null) as PopupRootLayout
+    private val panel: View = root.findViewById(R.id.panel)
+    private val headsRow: LinearLayout = root.findViewById(R.id.heads_row)
+    private val btnInbox: View = root.findViewById(R.id.btn_inbox)
+    private val inboxRing: View = root.findViewById(R.id.inbox_ring)
+
+    private val inboxContainer: View = root.findViewById(R.id.inbox_container)
+    private val inboxList: ListView = root.findViewById(R.id.inbox_list)
+    private val inboxEmpty: TextView = root.findViewById(R.id.inbox_empty)
+
+    private val threadContainer: View = root.findViewById(R.id.thread_container)
+    private val threadList: ListView = root.findViewById(R.id.thread_list)
+    private val threadAvatar: ImageView = root.findViewById(R.id.thread_avatar)
+    private val threadBadge: ImageView = root.findViewById(R.id.thread_badge)
+    private val threadName: TextView = root.findViewById(R.id.thread_name)
+    private val threadSub: TextView = root.findViewById(R.id.thread_sub)
+    private val replyHint: TextView = root.findViewById(R.id.reply_hint)
+    private val input: EditText = root.findViewById(R.id.input)
+    private val btnSend: ImageButton = root.findViewById(R.id.btn_send)
+
+    private val inboxAdapter = InboxAdapter(ctx)
+    private val threadAdapter = ThreadAdapter(ctx)
+    private var currentKey: String? = null
+    private var added = false
+
+    var attached = false
+        private set
+
+    init {
+        inboxList.adapter = inboxAdapter
+        threadList.adapter = threadAdapter
+
+        root.onBack = { if (currentKey != null) showInbox() else onCollapse() }
+        root.setOnClickListener { onCollapse() }           // tap on the dimmed area
+        panel.setOnClickListener { /* swallow taps inside the panel */ }
+        btnInbox.setOnClickListener { showInbox() }
+        root.findViewById<View>(R.id.btn_close_inbox).setOnClickListener { onCollapse() }
+        root.findViewById<View>(R.id.btn_back).setOnClickListener { showInbox() }
+        root.findViewById<View>(R.id.btn_close).setOnClickListener { onCollapse() }
+        root.findViewById<View>(R.id.btn_open).setOnClickListener { openInApp() }
+        root.findViewById<View>(R.id.thread_title_box).setOnClickListener { openInApp() }
+        btnSend.setOnClickListener { send() }
+
+        inboxList.setOnItemClickListener { _, _, position, _ ->
+            showThread(inboxAdapter.getItem(position).key)
+        }
+        inboxList.setOnItemLongClickListener { _, _, position, _ ->
+            val c = inboxAdapter.getItem(position)
+            ChatStore.delete(c.key)
+            Toast.makeText(ctx.applicationContext, "Removed chat with ${c.title} from this app", Toast.LENGTH_SHORT).show()
+            true
+        }
+
+        // Keep the panel clear of the status bar, navigation bar and keyboard.
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val (top, bottom) = barInsets(insets)
+            v.setPadding(0, top, 0, bottom)
+            insets
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun barInsets(insets: WindowInsets): Pair<Int, Int> {
+        return if (Build.VERSION.SDK_INT >= 30) {
+            val sys = insets.getInsets(WindowInsets.Type.systemBars())
+            val ime = insets.getInsets(WindowInsets.Type.ime())
+            Pair(sys.top, max(sys.bottom, ime.bottom))
+        } else {
+            Pair(insets.systemWindowInsetTop, insets.systemWindowInsetBottom)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    fun attach(key: String?) {
+        root.animate().cancel()
+        panel.animate().cancel()
+        root.alpha = 1f
+        panel.scaleX = 1f
+        panel.scaleY = 1f
+        if (!added) {
+            val p = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                PixelFormat.TRANSLUCENT
+            )
+            p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+                WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+            p.gravity = Gravity.TOP or Gravity.START
+            wm.addView(root, p)
+            added = true
+            panel.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.popup_enter))
+        }
+        attached = true
+        if (key != null && ChatStore.get(key) != null) showThread(key) else showInbox()
+    }
+
+    fun detach(onDone: () -> Unit) {
+        if (!attached) {
+            onDone()
+            return
+        }
+        attached = false
+        hideKeyboard()
+        root.animate().alpha(0f).setDuration(150).start()
+        panel.animate().scaleX(0.94f).scaleY(0.94f).setDuration(150).withEndAction {
+            try {
+                wm.removeView(root)
+            } catch (_: Exception) {
+            }
+            added = false
+            onDone()
+        }.start()
+    }
+
+    fun refresh() {
+        if (!attached) return
+        buildHeads()
+        val key = currentKey
+        if (key == null) {
+            val all = ChatStore.all()
+            inboxAdapter.setData(all)
+            inboxEmpty.visibility = if (all.isEmpty()) View.VISIBLE else View.GONE
+            inboxList.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+        } else {
+            val c = ChatStore.get(key)
+            if (c == null) {
+                showInbox()
+                return
+            }
+            threadAvatar.setImageBitmap(Avatars.forConv(c))
+            threadBadge.setImageBitmap(AppIcons.badge(ctx, c.pkg))
+            threadName.text = c.title
+            val app = AppIcons.label(ctx, c.pkg)
+            threadSub.text = if (c.isGroup) "Group · $app · tap to open" else "$app · tap to open in app"
+            replyHint.visibility = if (c.replyAction == null) View.VISIBLE else View.GONE
+            threadAdapter.setData(c)
+            ChatStore.markRead(c)
+        }
+    }
+
+    private fun buildHeads() {
+        while (headsRow.childCount > 1) headsRow.removeViewAt(1)
+        inboxRing.visibility = if (currentKey == null) View.VISIBLE else View.INVISIBLE
+        val inflater = LayoutInflater.from(ctx)
+        for (c in ChatStore.all().take(15)) {
+            val v = inflater.inflate(R.layout.item_head, headsRow, false)
+            v.findViewById<ImageView>(R.id.head_avatar).setImageBitmap(Avatars.forConv(c))
+            v.findViewById<ImageView>(R.id.head_badge).setImageBitmap(AppIcons.badge(ctx, c.pkg))
+            v.findViewById<View>(R.id.head_dot).visibility = if (c.unread > 0) View.VISIBLE else View.GONE
+            v.findViewById<View>(R.id.head_ring).visibility = if (c.key == currentKey) View.VISIBLE else View.INVISIBLE
+            v.contentDescription = c.title
+            v.setOnClickListener { showThread(c.key) }
+            headsRow.addView(v)
+        }
+    }
+
+    private fun showInbox() {
+        hideKeyboard()
+        currentKey = null
+        threadContainer.visibility = View.GONE
+        inboxContainer.visibility = View.VISIBLE
+        refresh()
+    }
+
+    private fun showThread(key: String) {
+        val switching = currentKey != key
+        currentKey = key
+        inboxContainer.visibility = View.GONE
+        threadContainer.visibility = View.VISIBLE
+        if (switching) {
+            input.setText("")
+            threadContainer.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.thread_enter))
+        }
+        refresh()
+        threadList.post { threadList.setSelection(max(0, threadAdapter.count - 1)) }
+    }
+
+    private fun send() {
+        val text = input.text.toString().trim()
+        if (text.isEmpty()) return
+        val c = ChatStore.get(currentKey) ?: return
+        val action = c.replyAction
+        if (action == null) {
+            Toast.makeText(ctx.applicationContext, "Can't reply yet. Wait for their next message, or open the app.", Toast.LENGTH_LONG).show()
+            return
+        }
+        // 1) Show my message immediately, 2) send it through Instagram/WhatsApp's own reply action.
+        val m = ChatStore.addOutgoing(c, text)
+        input.setText("")
+        val ok = ReplySender.send(ctx.applicationContext, action, text)
+        m.status = if (ok) ChatMessage.STATUS_OK else ChatMessage.STATUS_FAILED
+        if (!ok) {
+            c.replyAction = null
+            Toast.makeText(ctx.applicationContext, "Not sent. Open the app to reply.", Toast.LENGTH_LONG).show()
+        }
+        ChatStore.notifyChanged()
+    }
+
+    private fun openInApp() {
+        val c = ChatStore.get(currentKey) ?: return
+        val appCtx = ctx.applicationContext
+        onCollapse()
+        val ok = if (c.simulated) ReplySender.launchApp(appCtx, c.pkg)
+        else ReplySender.open(appCtx, c.contentIntent, c.pkg)
+        if (!ok) {
+            val msg = if (c.simulated) "This is a test chat (${AppIcons.label(appCtx, c.pkg)} isn't installed)"
+            else "Couldn't open ${AppIcons.label(appCtx, c.pkg)}"
+            Toast.makeText(appCtx, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun hideKeyboard() {
+        try {
+            val imm = ctx.getSystemService(InputMethodManager::class.java)
+            imm?.hideSoftInputFromWindow(input.windowToken, 0)
+        } catch (_: Exception) {
+        }
+    }
+}

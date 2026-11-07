@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="window_bg">#FF18191A</color>
+    <color name="panel_bg">#FF242526</color>
+    <color name="surface">#FF3A3B3C</color>
+    <color name="bubble_in">#FF3A3B3C</color>
+    <color name="divider">#FF3E4042</color>
+    <color name="text_primary">#FFE4E6EB</color>
+    <color name="text_secondary">#FFB0B3B8</color>
+</resources>

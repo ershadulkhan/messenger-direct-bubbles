@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="220dp"
+    android:background="@drawable/bg_dismiss_shadow">
+
+    <ImageView
+        android:id="@+id/dismiss_x"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="64dp"
+        android:background="@drawable/bg_dismiss"
+        android:contentDescription="Dismiss"
+        android:padding="18dp"
+        android:src="@drawable/ic_close" />
+</FrameLayout>
