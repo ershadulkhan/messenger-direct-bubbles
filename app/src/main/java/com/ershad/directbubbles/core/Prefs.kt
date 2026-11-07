@@ -39,6 +39,13 @@ object Prefs {
         sp(c).edit().putBoolean("mark_read_$pkg", on).apply()
     }
 
+    /** "Bubble only": remove the app's own notification once it's in a chat bubble. */
+    fun hideOriginal(c: Context, pkg: String): Boolean = sp(c).getBoolean("hide_orig_$pkg", false)
+
+    fun setHideOriginal(c: Context, pkg: String, on: Boolean) {
+        sp(c).edit().putBoolean("hide_orig_$pkg", on).apply()
+    }
+
     fun themeJson(c: Context, pkg: String): String? = sp(c).getString("theme_$pkg", null)
 
     fun setThemeJson(c: Context, pkg: String, json: String?) {

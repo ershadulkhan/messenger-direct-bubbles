@@ -17,6 +17,7 @@ import android.view.animation.AnimationUtils
 import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -46,9 +47,10 @@ class PopupUi(
 ) {
     private val root = LayoutInflater.from(ctx).inflate(R.layout.popup_window, null) as PopupRootLayout
     private val panel: View = root.findViewById(R.id.panel)
+    private val headsScroll: HorizontalScrollView = root.findViewById(R.id.heads_scroll)
     private val headsRow: LinearLayout = root.findViewById(R.id.heads_row)
-    private val btnInbox: View = root.findViewById(R.id.btn_inbox)
-    private val inboxRing: View = root.findViewById(R.id.inbox_ring)
+    private val topArrow: ImageView = root.findViewById(R.id.chat_top_arrow)
+    private val inboxTitle: TextView = root.findViewById(R.id.inbox_title)
 
     private val inboxContainer: View = root.findViewById(R.id.inbox_container)
     private val inboxList: ListView = root.findViewById(R.id.inbox_list)
@@ -76,7 +78,11 @@ class PopupUi(
 
     private val inboxAdapter = InboxAdapter(ctx)
     private val threadAdapter = ThreadAdapter(ctx)
+    /** Open person's chat, or null when an app inbox is showing. */
     private var currentKey: String? = null
+    /** Which app's inbox is showing (Instagram, WhatsApp...). Apps never mix. */
+    private var currentInboxPkg: String? = null
+    private var selectedHead: View? = null
     private var added = false
     private val density = ctx.resources.displayMetrics.density
 
@@ -87,12 +93,13 @@ class PopupUi(
         inboxList.adapter = inboxAdapter
         threadList.adapter = threadAdapter
 
-        root.onBack = { if (currentKey != null) showInbox() else onCollapse() }
-        root.setOnClickListener { onCollapse() }           // tap on the dimmed area
+        root.onBack = { onCollapse() }                     // Back minimizes to the floating bubble
+        root.setOnClickListener { onCollapse() }           // tap on the transparent space
         panel.setOnClickListener { /* swallow taps inside the panel */ }
-        btnInbox.setOnClickListener { showInbox() }
+        panel.clipToOutline = true                         // rounded corners clip the coloured header
+        headsScroll.setOnScrollChangeListener { _, _, _, _, _ -> positionArrow() }
         root.findViewById<View>(R.id.btn_close_inbox).setOnClickListener { onCollapse() }
-        btnBack.setOnClickListener { showInbox() }
+        btnBack.setOnClickListener { showInbox(ChatStore.get(currentKey)?.pkg) }
         btnClose.setOnClickListener { onCollapse() }
         btnOpen.setOnClickListener { openInApp() }
         root.findViewById<View>(R.id.thread_title_box).setOnClickListener { openInApp() }
@@ -132,8 +139,11 @@ class PopupUi(
         root.animate().cancel()
         panel.animate().cancel()
         root.alpha = 1f
+        panel.alpha = 1f
         panel.scaleX = 1f
         panel.scaleY = 1f
+        headsScroll.alpha = 1f
+        headsScroll.translationX = 0f
         if (!added) {
             val p = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -150,9 +160,10 @@ class PopupUi(
             wm.addView(root, p)
             added = true
             panel.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.popup_enter))
+            headsScroll.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.heads_enter))
         }
         attached = true
-        if (key != null && ChatStore.get(key) != null) showThread(key) else showInbox()
+        if (key != null && ChatStore.get(key) != null) showThread(key) else showInbox(null)
     }
 
     fun detach(onDone: () -> Unit) {
@@ -163,8 +174,13 @@ class PopupUi(
         attached = false
         hideKeyboard()
         endDragUi()
-        root.animate().alpha(0f).setDuration(150).start()
-        panel.animate().scaleX(0.94f).scaleY(0.94f).setDuration(150).withEndAction {
+        // Shrink back towards the chat heads (top-right), like Messenger.
+        panel.pivotX = panel.width * 0.92f
+        panel.pivotY = 0f
+        headsScroll.animate().alpha(0f).translationX(headsScroll.width * 0.2f).setDuration(200).start()
+        root.animate().alpha(0f).setDuration(220).start()
+        panel.animate().scaleX(0.55f).scaleY(0.55f).alpha(0f).setDuration(220)
+            .setInterpolator(android.view.animation.AccelerateInterpolator()).withEndAction {
             try {
                 wm.removeView(root)
             } catch (_: Exception) {
@@ -179,16 +195,23 @@ class PopupUi(
         buildHeads()
         val key = currentKey
         if (key == null) {
-            val all = ChatStore.all()
-            inboxAdapter.setData(all)
-            inboxEmpty.visibility = if (all.isEmpty()) View.VISIBLE else View.GONE
-            inboxList.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+            val pkg = currentInboxPkg ?: platforms().first()
+            currentInboxPkg = pkg
+            val label = AppIcons.label(ctx, pkg)
+            val list = ChatStore.all().filter { it.pkg == pkg }   // only this app's chats
+            inboxTitle.text = label
+            inboxEmpty.text = "No $label chats yet.\nNew $label messages will appear here."
+            inboxAdapter.setData(list)
+            inboxEmpty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+            inboxList.visibility = if (list.isEmpty()) View.GONE else View.VISIBLE
+            topArrow.imageTintList = android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.panel_bg))
         } else {
             val c = ChatStore.get(key)
             if (c == null) {
-                showInbox()
+                showInbox(null)
                 return
             }
+            currentInboxPkg = c.pkg
             applyTheme(c.pkg)
             threadAvatar.setImageBitmap(Avatars.forConv(c))
             threadBadge.setImageBitmap(AppIcons.badge(ctx, c.pkg))
@@ -210,38 +233,102 @@ class PopupUi(
     private fun applyTheme(pkg: String) {
         val t = Themes.forPkg(ctx, pkg)
         threadAdapter.theme = t
+        topArrow.imageTintList = android.content.res.ColorStateList.valueOf(t.titleBar)
         Themes.styleHeader(threadHeader, t, threadName, threadSub, listOf(btnBack, btnOpen, btnClose))
         threadDivider.setBackgroundColor(if (Themes.isDark(t.titleBar)) 0xFF1F1F1F.toInt() else 0x14000000)
         threadDivider.visibility = if (t.titleBar == t.chatBg) View.VISIBLE else View.GONE
-        val r = 26 * density
-        val body = GradientDrawable()
-        body.setColor(t.chatBg)
-        body.cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
-        threadContainer.background = body
+        threadContainer.background = GradientDrawable().apply { setColor(t.chatBg) }
         threadList.setBackgroundColor(t.chatBg)
         replyHint.setTextColor(Themes.subtleOn(t.chatBg))
         Themes.styleInput(inputBar, input, btnSend, t)
     }
 
+    /** App inboxes to offer: apps that have chats, plus Instagram & WhatsApp when enabled. */
+    private fun platforms(): List<String> {
+        val order = listOf("com.instagram.android", "com.whatsapp", "com.whatsapp.w4b")
+        val enabled = Prefs.enabledApps(ctx)
+        val set = LinkedHashSet<String>()
+        for (p in order) if (p in enabled || ChatStore.all().any { it.pkg == p }) set.add(p)
+        for (c in ChatStore.all()) set.add(c.pkg)
+        if (set.isEmpty()) set.addAll(listOf("com.instagram.android", "com.whatsapp"))
+        return set.sortedBy { val i = order.indexOf(it); if (i < 0) 99 else i }
+    }
+
     private fun buildHeads() {
-        while (headsRow.childCount > 1) headsRow.removeViewAt(1)
-        inboxRing.visibility = if (currentKey == null) View.VISIBLE else View.INVISIBLE
+        headsRow.removeAllViews()
+        selectedHead = null
         val inflater = LayoutInflater.from(ctx)
+        // 1) One inbox bubble per app (Instagram inbox, WhatsApp inbox, ...)
+        for (pkg in platforms()) {
+            val v = inflater.inflate(R.layout.item_head, headsRow, false)
+            v.findViewById<ImageView>(R.id.head_avatar).setImageBitmap(AppIcons.big(ctx, pkg))
+            v.findViewById<View>(R.id.head_badge).visibility = View.GONE
+            val unread = ChatStore.all().any { it.pkg == pkg && it.unread > 0 }
+            v.findViewById<View>(R.id.head_dot).visibility = if (unread) View.VISIBLE else View.GONE
+            val selected = currentKey == null && currentInboxPkg == pkg
+            v.findViewById<View>(R.id.head_ring).visibility = if (selected) View.VISIBLE else View.INVISIBLE
+            if (selected) selectedHead = v
+            v.contentDescription = "${AppIcons.label(ctx, pkg)} inbox"
+            v.setOnClickListener {
+                // Tapping the open inbox again minimizes; tapping another switches.
+                if (currentKey == null && currentInboxPkg == pkg) onCollapse() else showInbox(pkg)
+            }
+            headsRow.addView(v)
+        }
+        // A small gap between app inboxes and people.
+        val gap = View(ctx)
+        headsRow.addView(gap, LinearLayout.LayoutParams((6 * density).toInt(), 1))
+        // 2) One bubble per active person.
         for (c in ChatStore.activeOnes().take(15)) {
             val v = inflater.inflate(R.layout.item_head, headsRow, false)
             v.findViewById<ImageView>(R.id.head_avatar).setImageBitmap(Avatars.forConv(c))
             v.findViewById<ImageView>(R.id.head_badge).setImageBitmap(AppIcons.badge(ctx, c.pkg))
             v.findViewById<View>(R.id.head_dot).visibility = if (c.unread > 0) View.VISIBLE else View.GONE
-            v.findViewById<View>(R.id.head_ring).visibility = if (c.key == currentKey) View.VISIBLE else View.INVISIBLE
-            v.contentDescription = "${c.title}. Drag down to close."
+            val selected = c.key == currentKey
+            v.findViewById<View>(R.id.head_ring).visibility = if (selected) View.VISIBLE else View.INVISIBLE
+            if (selected) selectedHead = v
+            v.contentDescription = "${c.title}. Tap again to minimize, drag down to close."
             v.setOnTouchListener(HeadTouch(c.key))
             headsRow.addView(v)
         }
+        headsRow.post {
+            val sel = selectedHead
+            if (sel != null) {
+                // Keep the selected head visible.
+                if (sel.left < headsScroll.scrollX || sel.right > headsScroll.scrollX + headsScroll.width) {
+                    headsScroll.smoothScrollTo(sel.left, 0)
+                }
+            }
+            positionArrow()
+        }
     }
 
-    private fun showInbox() {
+    /** Points the little triangle at the selected chat head. */
+    private fun positionArrow() {
+        val sel = selectedHead
+        if (sel == null || !sel.isAttachedToWindow) {
+            topArrow.visibility = View.INVISIBLE
+            return
+        }
+        topArrow.visibility = View.VISIBLE
+        val parent = topArrow.parent as View
+        val selLoc = IntArray(2)
+        sel.getLocationInWindow(selLoc)
+        val parentLoc = IntArray(2)
+        parent.getLocationInWindow(parentLoc)
+        val center = selLoc[0] + sel.width / 2f - parentLoc[0]
+        val lo = 30 * density
+        val hi = max(lo, parent.width - 30 * density)
+        topArrow.translationX = center.coerceIn(lo, hi) - topArrow.width / 2f
+    }
+
+    private fun showInbox(pkg: String?) {
         hideKeyboard()
+        val switching = currentKey != null || (pkg != null && pkg != currentInboxPkg)
+        if (pkg != null) currentInboxPkg = pkg
+        else if (currentInboxPkg == null) currentInboxPkg = platforms().first()
         currentKey = null
+        if (switching) inboxContainer.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.thread_enter))
         threadContainer.visibility = View.GONE
         inboxContainer.visibility = View.VISIBLE
         refresh()
@@ -264,11 +351,8 @@ class PopupUi(
     /** Closes one person's chat head (history stays in the inbox). */
     private fun closeHead(key: String) {
         ChatStore.setActive(key, false)
-        if (ChatStore.activeOnes().isEmpty()) {
-            onCollapse()
-            return
-        }
-        if (currentKey == key) showInbox() else refresh()
+        // The app inbox bubbles stay, so the popup stays open on that app's inbox.
+        if (currentKey == key) showInbox(ChatStore.get(key)?.pkg) else refresh()
     }
 
     // ---------------- drag a chat head to the X ----------------
@@ -315,7 +399,10 @@ class PopupUi(
                 MotionEvent.ACTION_UP -> {
                     v.isPressed = false
                     if (dragging) finishDrag(v, inTarget, key)
-                    else if (!moved) showThread(key)
+                    else if (!moved) {
+                        // Tapping the open person again minimizes; tapping another person switches.
+                        if (currentKey == key) onCollapse() else showThread(key)
+                    }
                     dragging = false
                 }
                 MotionEvent.ACTION_CANCEL -> {
@@ -383,7 +470,7 @@ class PopupUi(
         ghost.animate().cancel()
         ghost.visibility = View.GONE
         dismissZone.visibility = View.GONE
-        for (i in 1 until headsRow.childCount) headsRow.getChildAt(i).alpha = 1f
+        for (i in 0 until headsRow.childCount) headsRow.getChildAt(i).alpha = 1f
     }
 
     // ---------------- actions ----------------

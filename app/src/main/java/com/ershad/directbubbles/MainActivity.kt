@@ -91,7 +91,6 @@ class MainActivity : Activity() {
         }
         findViewById<TextView>(R.id.version_text).text = "Version ${BuildConfig.VERSION_NAME}"
 
-        if (Build.VERSION.SDK_INT >= 33 && !hasPostPermission()) askNotificationPermission()
     }
 
     override fun onResume() {
@@ -139,8 +138,8 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) {
             cardPost.visibility = View.VISIBLE
             val postOk = hasPostPermission()
-            statusPost.text = if (postOk) "✅ Allowed — a silent entry in the notification panel opens your chats."
-            else "Optional: shows a silent entry in the notification panel to reopen your chats."
+            statusPost.text = if (postOk) "✅ Allowed — only used by the Test button. Direct Bubbles never shows its own notification."
+            else "Optional: lets the Test button send realistic test messages. Direct Bubbles never shows its own notification — the bubble holds everything."
             btnPost.text = if (postOk) "Open settings" else "Allow"
         } else {
             cardPost.visibility = View.GONE

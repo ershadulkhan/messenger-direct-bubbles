@@ -6,6 +6,7 @@
     <color name="unread_red">#FFFA383E</color>
     <color name="ok_green">#FF31A24C</color>
     <color name="dim">#73000000</color>
+    <color name="dim_soft">#4D000000</color>
     <color name="window_bg">#FFF0F2F5</color>
     <color name="panel_bg">#FFFFFFFF</color>
     <color name="card_bg">#FFFFFFFF</color>

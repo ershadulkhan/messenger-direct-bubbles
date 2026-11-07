@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- The ONLY permissions this app uses. No INTERNET, no accessibility, no location, no wake locks. -->
+    <!-- The ONLY permissions this app uses. No INTERNET, no foreground-service notification, no accessibility, no location, no wake locks. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Lets the app see installed launcher apps (for the app picker and app badges). -->
@@ -63,15 +61,6 @@
             </intent-filter>
         </service>
 
-        <!-- Runs ONLY while a chat bubble is on screen; stops when all bubbles are dismissed. -->
-        <service
-            android:name=".service.BubbleKeepAliveService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keeps floating chat bubbles visible over other apps while a chat is active" />
-        </service>
 
         <receiver
             android:name=".sim.TestReplyReceiver"

@@ -24,11 +24,12 @@ If Android asks, allow your browser to *install unknown apps*. Each new build in
 | | |
 |---|---|
 | 🫧 **Chat head** | Circular profile picture, small Instagram/WhatsApp badge, unread count. Drag it anywhere; it snaps to the screen edge. Drag it onto the **X** at the bottom to dismiss. |
-| 📥 **Inbox** | Everyone's chats, one below another, newest at the top: avatar + app badge, name, latest message + time, unread count. A row of chat heads at the top switches between people in one tap. |
+| 📥 **Separate inboxes** | An **Instagram inbox** and a **WhatsApp inbox** (apps never mix), each listing that app's chats one below another, newest at the top. The row of bubbles at the top switches between the app inboxes and each person. |
 | 💬 **Chat thread** | One person's messages, one below another. Theirs on the left, yours on the right in Messenger-blue bubbles. History is saved on the phone. |
 | ↩️ **Direct reply** | Type and press send. The reply goes out through Instagram/WhatsApp's own notification *Reply* action (`RemoteInput`). The reply action is cached, so you can send several replies even after the notification is cleared. |
 | ↗️ **Open in app** | Tap the name or ↗ to jump straight to that chat in Instagram/WhatsApp. |
-| 🔕 **Panel entry** | While a bubble is on screen, a silent notification lets you reopen the inbox or hide the bubbles. |
+| 🔕 **No notifications** | Direct Bubbles never shows a notification of its own — the bubble holds everything. Optional per-app **Bubble only** also clears Instagram/WhatsApp's own notification from the panel. |
+| 👆 **Tap to toggle** | Tap the floating bubble to open; tap the selected bubble again, the empty space above it, or Back to minimize. |
 | ⚙️ **Any app** | Instagram and WhatsApp (plus WhatsApp Business) are on by default. *Choose apps* adds Messenger, Telegram, Signal, SMS and others. |
 
 ### Per-app settings (Main screen → app → Settings ›)
@@ -44,7 +45,7 @@ Tip: long-press a chat in the inbox to remove it from this app (it is not delete
 
 ## Privacy & battery
 
-- **Permissions used:** notification access, display over other apps, foreground service (only while a bubble is visible), post notifications. That's all.
+- **Permissions used:** notification access and display over other apps (plus optional notifications, only for the Test button). That's all.
 - **No** internet permission, accessibility service, Shizuku/root, location, background polling or wake locks.
 - **0% CPU while idle.** Android wakes the app only when a notification arrives. Overlay windows exist only while a bubble is on screen.
 - Messages never leave the phone. They are stored in the app's private storage (a small JSON file).

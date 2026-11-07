@@ -105,6 +105,19 @@ object AppIcons {
         else Avatars.letter(label(c, pkg), KNOWN_COLORS[pkg], 72)
     }
 
+    private val bigCache = HashMap<String, Bitmap>()
+
+    /** Full-size round app icon, used for the Instagram / WhatsApp inbox bubbles. */
+    fun big(c: Context, pkg: String): Bitmap = bigCache.getOrPut(pkg) {
+        val d: Drawable? = try {
+            c.packageManager.getApplicationIcon(pkg)
+        } catch (e: Exception) {
+            null
+        }
+        if (d != null) Avatars.circle(Avatars.fromDrawable(d, 160), 160)
+        else Avatars.letter(label(c, pkg), KNOWN_COLORS[pkg], 160)
+    }
+
     fun label(c: Context, pkg: String): String {
         KNOWN_LABELS[pkg]?.let { return it }
         return try {

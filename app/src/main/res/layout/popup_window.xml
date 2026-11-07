@@ -3,28 +3,24 @@
     android:id="@+id/popup_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/dim">
+    android:background="@color/dim_soft">
 
+    <!-- Content: transparent heads row on top, then the solid chat window below it -->
     <LinearLayout
-        android:id="@+id/panel"
+        android:id="@+id/popup_content"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="8dp"
-        android:layout_marginBottom="8dp"
-        android:background="@drawable/bg_panel"
-        android:clickable="true"
-        android:elevation="12dp"
-        android:focusable="false"
         android:orientation="vertical">
 
-        <!-- Row of chat heads (switch between people) + Inbox button -->
+        <!-- Row of chat heads: Instagram inbox, WhatsApp inbox, then each person. Transparent background. -->
         <HorizontalScrollView
-            android:layout_width="match_parent"
+            android:id="@+id/heads_scroll"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:paddingTop="8dp"
-            android:paddingBottom="4dp"
+            android:layout_gravity="end"
+            android:layout_marginTop="10dp"
+            android:clipToPadding="false"
+            android:overScrollMode="never"
             android:scrollbars="none">
 
             <LinearLayout
@@ -33,40 +29,31 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:paddingStart="8dp"
-                android:paddingEnd="8dp">
-
-                <FrameLayout
-                    android:id="@+id/btn_inbox"
-                    android:layout_width="60dp"
-                    android:layout_height="60dp"
-                    android:layout_marginEnd="2dp"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Inbox">
-
-                    <View
-                        android:id="@+id/inbox_ring"
-                        android:layout_width="58dp"
-                        android:layout_height="58dp"
-                        android:layout_gravity="center"
-                        android:background="@drawable/bg_head_selected"
-                        android:visibility="invisible" />
-
-                    <ImageView
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:layout_gravity="center"
-                        android:background="@drawable/bg_inbox_btn"
-                        android:contentDescription="Inbox"
-                        android:padding="12dp"
-                        android:src="@drawable/ic_inbox" />
-                </FrameLayout>
-            </LinearLayout>
+                android:paddingEnd="8dp" />
         </HorizontalScrollView>
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/divider" />
+        <!-- Pointer from the chat window up to the selected chat head -->
+        <ImageView
+            android:id="@+id/chat_top_arrow"
+            android:layout_width="22dp"
+            android:layout_height="11dp"
+            android:layout_marginTop="2dp"
+            android:contentDescription="@null"
+            android:src="@drawable/chat_top_arrow" />
+
+    <LinearLayout
+        android:id="@+id/panel"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_panel"
+        android:clickable="true"
+        android:elevation="12dp"
+        android:focusable="false"
+        android:orientation="vertical">
 
         <!-- ===== Inbox: everyone's chats, one below another ===== -->
         <LinearLayout
@@ -87,6 +74,7 @@
                 android:paddingBottom="4dp">
 
                 <TextView
+                    android:id="@+id/inbox_title"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -120,7 +108,7 @@
                 android:layout_weight="1"
                 android:gravity="center"
                 android:padding="32dp"
-                android:text="No chats yet.\nNew Instagram and WhatsApp DMs will appear here."
+                android:text="No chats yet."
                 android:textColor="@color/text_secondary"
                 android:textSize="15sp"
                 android:visibility="gone" />
@@ -305,6 +293,7 @@
                     android:tint="@color/brand_blue" />
             </LinearLayout>
         </LinearLayout>
+    </LinearLayout>
     </LinearLayout>
 
     <!-- Drag a chat head down onto this X to close just that person's chat head -->

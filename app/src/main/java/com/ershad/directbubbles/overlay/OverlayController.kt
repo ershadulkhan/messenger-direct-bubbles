@@ -27,9 +27,7 @@ import com.ershad.directbubbles.R
 import com.ershad.directbubbles.core.AppIcons
 import com.ershad.directbubbles.core.Avatars
 import com.ershad.directbubbles.core.ChatStore
-import com.ershad.directbubbles.core.Notifications
 import com.ershad.directbubbles.core.Prefs
-import com.ershad.directbubbles.service.BubbleKeepAliveService
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -80,7 +78,6 @@ object OverlayController {
         val p = popup
         if (p != null && p.attached) {
             p.refresh()
-            BubbleKeepAliveService.start(a)
             return
         }
         showBubble(true)
@@ -102,7 +99,6 @@ object OverlayController {
             popup = null
             return
         }
-        BubbleKeepAliveService.start(a)
     }
 
     /** Popup -> back to the floating chat head (or nothing if no chat is active). */
@@ -111,7 +107,6 @@ object OverlayController {
         p.detach {
             val a = app ?: return@detach
             if (ChatStore.activeOnes().isNotEmpty() && Prefs.bubblesOn(a) && canDraw()) showBubble(false)
-            else BubbleKeepAliveService.stop(a)
         }
     }
 
@@ -129,7 +124,6 @@ object OverlayController {
         if (b != null) {
             b.animate().scaleX(0f).scaleY(0f).alpha(0f).setDuration(170).withEndAction { safeRemove(b) }.start()
         }
-        BubbleKeepAliveService.stop(a)
     }
 
     private fun focusConvKey(): String? {
@@ -175,8 +169,6 @@ object OverlayController {
             v.startAnimation(AnimationUtils.loadAnimation(ui, R.anim.bounce))
         }
         bindBubble()
-        // The overlay is now visible, so Android allows starting the foreground service.
-        BubbleKeepAliveService.start(a)
     }
 
     private fun bindBubble() {
@@ -207,7 +199,6 @@ object OverlayController {
     private fun refreshNow() {
         if (bubble != null) bindBubble()
         popup?.let { if (it.attached) it.refresh() }
-        app?.let { Notifications.refresh(it) }
     }
 
     // ---------------- drag-to-dismiss target ----------------

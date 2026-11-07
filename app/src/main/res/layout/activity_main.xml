@@ -110,7 +110,7 @@
 
             <TextView
                 style="@style/CardTitle"
-                android:text="3 · Notification panel entry" />
+                android:text="Test notifications (optional)" />
 
             <TextView
                 android:id="@+id/status_post"

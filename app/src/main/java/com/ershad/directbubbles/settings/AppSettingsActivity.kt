@@ -63,6 +63,20 @@ class AppSettingsActivity : Activity() {
         }
         list.addView(markRow)
 
+        val hideCheck = CheckBox(this)
+        hideCheck.isChecked = Prefs.hideOriginal(this, pkg)
+        hideCheck.isClickable = false
+        val (hideRow, _) = SettingsUi.row(
+            this, "Bubble only (hide $label notifications)",
+            "After a message reaches its chat bubble, remove $label's own notification from the notification panel. Replies still work.",
+            hideCheck
+        ) {
+            val on = !hideCheck.isChecked
+            hideCheck.isChecked = on
+            Prefs.setHideOriginal(this, pkg, on)
+        }
+        list.addView(hideRow)
+
         val (themeRow, _) = SettingsUi.row(this, "Themes", "Set up the colours and style of the $label chat window") {
             startActivity(Intent(this, ThemeActivity::class.java).putExtra(EXTRA_PKG, pkg))
         }

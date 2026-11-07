@@ -42,6 +42,13 @@ class BubbleNotificationListener : NotificationListenerService() {
             if (added > 0) {
                 OverlayController.init(this)
                 OverlayController.onNewMessages(batch.key)
+                // Optional "Bubble only": clear the app's own notification (reply action stays cached).
+                if (pkg != packageName && Prefs.hideOriginal(this, pkg)) {
+                    try {
+                        cancelNotification(sbn.key)
+                    } catch (_: Exception) {
+                    }
+                }
             }
         } catch (t: Throwable) {
             Log.w(TAG, "failed to handle notification", t)
