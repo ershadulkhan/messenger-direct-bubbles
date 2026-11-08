@@ -135,6 +135,7 @@ object ChatStore {
                 if (echo != null) {
                     if (echo.status == ChatMessage.STATUS_OK || echo.status == ChatMessage.STATUS_SENDING) {
                         echo.status = ChatMessage.STATUS_CONFIRMED
+                        if (echo.confirmedAt == 0L) echo.confirmedAt = System.currentTimeMillis()
                     }
                     continue
                 }
@@ -190,6 +191,7 @@ object ChatStore {
         for (m in c.messages.takeLast(10)) {
             if (m.outgoing && m.status == ChatMessage.STATUS_OK && now - m.time < 60_000L) {
                 m.status = ChatMessage.STATUS_CONFIRMED
+                if (m.confirmedAt == 0L) m.confirmedAt = now
                 any = true
             }
         }

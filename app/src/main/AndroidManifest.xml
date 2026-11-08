@@ -41,6 +41,9 @@
             android:exported="false" />
 
         <activity
+            android:name=".settings.ReplySpeedActivity"
+            android:exported="false" />
+        <activity
             android:name=".settings.PermissionsActivity"
             android:exported="false" />
 

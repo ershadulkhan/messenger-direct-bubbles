@@ -14,6 +14,11 @@ class ChatMessage(
     /** KIND_TEXT or KIND_CALL ("Audio call", "Missed video call"...). */
     val kind: Int = KIND_TEXT,
 ) {
+    /** Reply-speed diagnostics (not saved): when handed to the app, when the app confirmed, and by which route. */
+    var sentAt: Long = 0L
+    var confirmedAt: Long = 0L
+    var route: String = ""
+
     companion object {
         const val KIND_TEXT = 0
         const val KIND_CALL = 1

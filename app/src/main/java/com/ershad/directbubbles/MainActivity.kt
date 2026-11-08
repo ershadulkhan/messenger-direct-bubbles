@@ -90,6 +90,9 @@ class MainActivity : Activity() {
             },
             Tile("Inbox", R.drawable.ic_inbox, 0xFF0A7CFF.toInt(), 0xFF3BBEFF.toInt()) { openInbox() },
             Tile("Clear History", R.drawable.ic_delete, 0xFFF7931E.toInt(), 0xFFFFC107.toInt()) { confirmClear() },
+            Tile("Reply Speed", R.drawable.ic_tune, 0xFF00A884.toInt(), 0xFF25D366.toInt()) {
+                startActivity(Intent(this, com.ershad.directbubbles.settings.ReplySpeedActivity::class.java))
+            },
             Tile("About", R.drawable.ic_info, 0xFF5B2BD9.toInt(), 0xFF7B3FF2.toInt()) { showAbout() },
         )
         val d = resources.displayMetrics.density

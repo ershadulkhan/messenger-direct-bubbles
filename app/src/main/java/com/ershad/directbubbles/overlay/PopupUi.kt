@@ -419,6 +419,9 @@ class PopupUi(
             attempts[keyOf(c, m)] = attempt
             for (a in candidates) {
                 if (ReplySender.send(appCtx, a, m.text, (attempt / all.size) % 2 == 0)) {
+                    m.sentAt = System.currentTimeMillis()
+                    m.route = com.ershad.directbubbles.core.NotificationParser.routeOf(a)
+                    com.ershad.directbubbles.core.ReplyLog.record(c.pkg, c.title, m, attempt)
                     c.replyAction = a
                     return null
                 }
