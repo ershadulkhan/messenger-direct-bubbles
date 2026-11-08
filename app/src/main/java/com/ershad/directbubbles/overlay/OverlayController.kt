@@ -53,6 +53,8 @@ object OverlayController {
     private var dismissTarget: View? = null
     private var popup: PopupUi? = null
     private var focusKey: String? = null
+    /** Set when the last tapped head was an app inbox (Instagram / WhatsApp) instead of a person. */
+    private var focusPkg: String? = null
     private var snapAnimator: ValueAnimator? = null
     private var preview: View? = null
     private val hidePreviewRunnable = Runnable { hidePreview() }
@@ -78,6 +80,7 @@ object OverlayController {
         val a = app ?: return
         if (!Prefs.bubblesOn(a) || !canDraw()) return
         focusKey = key
+        focusPkg = null
         ChatStore.get(key)?.let { PopupUi.unhidePlatform(it.pkg) }
         val p = popup
         if (p != null && p.attached) {
@@ -89,7 +92,7 @@ object OverlayController {
     }
 
     /** Opens the Messenger-style popup (a person's thread if [key] is given, otherwise the inbox). */
-    fun openPopup(key: String?, focusInput: Boolean = false) {
+    fun openPopup(key: String?, focusInput: Boolean = false, inboxPkg: String? = null) {
         val a = app ?: return
         if (!canDraw()) {
             Toast.makeText(a, "Allow \"Display over other apps\" first", Toast.LENGTH_SHORT).show()
@@ -98,8 +101,9 @@ object OverlayController {
         hidePreview()
         removeBubble()
         val p = popup ?: PopupUi(ui, wm) { collapsePopup() }.also { popup = it }
+        p.onFocus = { k, pkg -> focusKey = k; focusPkg = pkg }
         try {
-            p.attach(key, focusInput)
+            p.attach(key, focusInput, inboxPkg)
         } catch (e: Exception) {
             Log.w(TAG, "popup failed", e)
             popup = null
@@ -161,6 +165,7 @@ object OverlayController {
     }
 
     private fun focusConvKey(): String? {
+        if (focusKey == null && focusPkg != null) return null   // an app inbox head was tapped last
         val f = ChatStore.get(focusKey)
         if (f != null && f.active) return f.key
         return ChatStore.activeOnes().firstOrNull()?.key
@@ -238,8 +243,9 @@ object OverlayController {
         val avatar = v.findViewById<ImageView>(R.id.bubble_avatar)
         val badge = v.findViewById<ImageView>(R.id.bubble_badge)
         if (conv == null) {
-            // Master bubble with no open person: shows the app icon and opens the inboxes.
-            avatar.setImageBitmap(AppIcons.big(ui, ui.packageName))
+            // The last tapped head was an app inbox: the bubble IS that app's icon (like DirectChat).
+            // Otherwise: Direct Bubbles' own icon, which opens the inboxes.
+            avatar.setImageBitmap(AppIcons.big(ui, focusPkg ?: ui.packageName))
             badge.visibility = View.GONE
             val unreadT = v.findViewById<TextView>(R.id.bubble_unread)
             val tu = ChatStore.totalUnread()
@@ -380,6 +386,35 @@ object OverlayController {
         private var dragging = false
         private var inTarget = false
         private val slop = ViewConfiguration.get(view.context).scaledTouchSlop
+        private var tx = 0
+        private var ty = 0
+        private var following = false
+
+        /** Eases the bubble toward the finger every frame (buttery, slightly springy follow). */
+        private val frame = object : android.view.Choreographer.FrameCallback {
+            override fun doFrame(t: Long) {
+                if (!following) return
+                val dx = tx - p.x
+                val dy = ty - p.y
+                if (kotlin.math.abs(dx) > 0 || kotlin.math.abs(dy) > 0) {
+                    p.x += if (kotlin.math.abs(dx) <= 1) dx else (dx * 0.42f).toInt()
+                    p.y += if (kotlin.math.abs(dy) <= 1) dy else (dy * 0.42f).toInt()
+                    updateBubble()
+                }
+                android.view.Choreographer.getInstance().postFrameCallback(this)
+            }
+        }
+
+        private fun startFollow() {
+            if (following) return
+            following = true
+            android.view.Choreographer.getInstance().postFrameCallback(frame)
+        }
+
+        private fun stopFollow() {
+            following = false
+            android.view.Choreographer.getInstance().removeFrameCallback(frame)
+        }
 
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, e: MotionEvent): Boolean {
@@ -400,7 +435,10 @@ object OverlayController {
                     val dy = e.rawY - downY
                     if (!dragging && hypot(dx, dy) > slop) {
                         dragging = true
+                        tx = p.x
+                        ty = p.y
                         showTarget()
+                        startFollow()
                     }
                     if (dragging) {
                         val screen = screenSize()
@@ -423,18 +461,19 @@ object OverlayController {
                             inTarget = false
                             targetHover(false)
                         }
-                        p.x = nx
-                        p.y = ny
-                        updateBubble()
+                        tx = nx
+                        ty = ny
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                    stopFollow()
                     if (dragging) {
+                        if (inTarget) { p.x = tx; p.y = ty; updateBubble() }
                         hideTarget()
                         if (inTarget) dismissAll() else snapToEdge()
                     } else if (e.actionMasked == MotionEvent.ACTION_UP) {
-                        openPopup(focusConvKey())
+                        openPopup(focusConvKey(), inboxPkg = focusPkg)
                     }
                     dragging = false
                     inTarget = false

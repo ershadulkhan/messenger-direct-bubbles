@@ -177,7 +177,10 @@ class PopupUi(
     }
 
     @Suppress("DEPRECATION")
-    fun attach(key: String?, focusInput: Boolean = false) {
+    /** Tells the floating bubble which head was tapped last (a person's key, or an app's package). */
+    var onFocus: ((key: String?, pkg: String?) -> Unit)? = null
+
+    fun attach(key: String?, focusInput: Boolean = false, inboxPkg: String? = null) {
         root.animate().cancel()
         panel.animate().cancel()
         root.alpha = 1f
@@ -209,7 +212,7 @@ class PopupUi(
             showThread(key)
             // Instant Reply: keyboard up, ready to type.
             if (focusInput) input.post { focusInput() }
-        } else showInbox(null)
+        } else showInbox(inboxPkg)
     }
 
     fun detach(onDone: () -> Unit) {
@@ -568,6 +571,7 @@ class PopupUi(
         if (pkg != null) currentInboxPkg = pkg
         else if (currentInboxPkg == null) currentInboxPkg = platforms().firstOrNull()
         currentKey = null
+        onFocus?.invoke(null, currentInboxPkg)
         if (switching) inboxContainer.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.thread_enter))
         threadContainer.visibility = View.GONE
         inboxContainer.visibility = View.VISIBLE
@@ -577,6 +581,7 @@ class PopupUi(
     private fun showThread(key: String) {
         val switching = currentKey != key
         currentKey = key
+        onFocus?.invoke(key, null)
         ChatStore.get(key)?.active = true   // opening a chat gives it a chat head (like Messenger)
         inboxContainer.visibility = View.GONE
         threadContainer.visibility = View.VISIBLE
