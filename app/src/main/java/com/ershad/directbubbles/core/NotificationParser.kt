@@ -287,11 +287,11 @@ object NotificationParser {
     /**
      * Every action that can take typed text, best first.
      *
-     * Order matters for Instagram: its phone "Reply" button often points at a background *service*,
-     * which Android refuses to start for an app that is not in the foreground unless the system
-     * notification shade sends it. Its Wear OS reply (what DirectChat uses) is a *broadcast*, which
-     * is delivered right away. So: Wear first, then car/auto, then the visible button, and within
-     * each, broadcasts before foreground services before plain services before activities.
+     * Measured on a vivo V2503 / Android 17 (Reply Speed report): WhatsApp's phone Reply button
+     * (a service) was confirmed in ~0.1 s, while Instagram's Wear OS reply (a broadcast) took 40-50 s
+     * or never arrived: OriginOS holds broadcasts to a frozen app until it thaws. So: the phone
+     * button first (what the notification shade presses), then car, then Wear; and within each,
+     * services before broadcasts.
      */
     fun allReplyActions(n: Notification): List<Notification.Action> {
         fun ok(a: Notification.Action) = a.actionIntent != null && a.remoteInputs?.any { it.allowFreeFormInput } == true
@@ -299,19 +299,24 @@ object NotificationParser {
         val car = invisibleActions(n).filter(::ok)
         val phone = (n.actions ?: emptyArray()).filter(::ok)
         val ranked = ArrayList<Pair<Int, Notification.Action>>()
-        wear.forEach { ranked.add(0 + kindRank(it) to it) }
+        phone.forEach { ranked.add(0 + kindRank(it) to it) }
         car.forEach { ranked.add(10 + kindRank(it) to it) }
-        phone.forEach { ranked.add(20 + kindRank(it) to it) }
-        return ranked.sortedBy { it.first }.map { it.second }.distinctBy { it.actionIntent }
+        wear.forEach { ranked.add(20 + kindRank(it) to it) }
+        val out = ranked.sortedBy { it.first }.map { it.second }.distinctBy { it.actionIntent }
+        for (a in out) sourceOf[a.actionIntent] = when { a in phone -> "phone"; a in car -> "car"; else -> "wear" }
+        return out
     }
+
+    /** Where each reply button came from (phone / car / wear), for the Reply Speed screen. */
+    private val sourceOf = java.util.WeakHashMap<PendingIntent, String>()
 
     private fun kindRank(a: Notification.Action): Int {
         val pi = a.actionIntent ?: return 9
         if (Build.VERSION.SDK_INT < 31) return 0
         return when {
-            pi.isBroadcast -> 0
-            pi.isForegroundService -> 1
-            pi.isService -> 2
+            pi.isForegroundService -> 0
+            pi.isService -> 1
+            pi.isBroadcast -> 2
             pi.isActivity -> 3
             else -> 4
         }
@@ -320,8 +325,9 @@ object NotificationParser {
     /** Short label of how a reply will travel, for the "Not confirmed" hint. */
     fun routeOf(a: Notification.Action): String {
         val pi = a.actionIntent ?: return "?"
-        if (Build.VERSION.SDK_INT < 31) return "reply"
-        return when {
+        val src = sourceOf[pi]?.let { "$it-" } ?: ""
+        if (Build.VERSION.SDK_INT < 31) return src + "reply"
+        return src + when {
             pi.isBroadcast -> "broadcast"
             pi.isForegroundService -> "fg-service"
             pi.isService -> "service"

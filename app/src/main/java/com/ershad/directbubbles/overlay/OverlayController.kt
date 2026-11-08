@@ -56,6 +56,15 @@ object OverlayController {
     /** Set when the last tapped head was an app inbox (Instagram / WhatsApp) instead of a person. */
     private var focusPkg: String? = null
     private var snapAnimator: ValueAnimator? = null
+
+    /**
+     * Other open chat heads, drawn as a stack behind the floating bubble (like DirectChat / Messenger).
+     * They are separate untouchable windows that trail the bubble with a little lag when it moves.
+     */
+    private class Follower(val view: View, val params: WindowManager.LayoutParams, var fx: Float, var fy: Float)
+    private val followers = ArrayList<Follower>()
+    private var followLoopOn = false
+    private const val MAX_FOLLOWERS = 2
     private var preview: View? = null
     private val hidePreviewRunnable = Runnable { hidePreview() }
     private val refreshRunnable = Runnable { refreshNow() }
@@ -156,6 +165,13 @@ object OverlayController {
         snapAnimator?.cancel()
         dismissTarget?.let { safeRemove(it) }
         dismissTarget = null
+        val fs = ArrayList(followers)
+        followers.clear()
+        followLoopOn = false
+        fs.forEachIndexed { i, f ->
+            f.view.animate().scaleX(0f).scaleY(0f).alpha(0f).setStartDelay(40L * (i + 1)).setDuration(170)
+                .withEndAction { safeRemove(f.view) }.start()
+        }
         val b = bubble
         bubble = null
         bubbleParams = null
@@ -199,6 +215,7 @@ object OverlayController {
             val y = if (remember) Prefs.bubbleY(a, screen.y / 4) else screen.y / 4
             p.y = y.coerceIn(dp(48), max(dp(48), screen.y - size - dp(96)))
             v.setOnTouchListener(BubbleTouch(v, p))
+            createFollowers(p)   // added before the bubble, so they sit underneath it
             try {
                 wm.addView(v, p)
             } catch (e: Exception) {
@@ -207,11 +224,136 @@ object OverlayController {
             }
             bubble = v
             bubbleParams = p
-            v.startAnimation(AnimationUtils.loadAnimation(ui, R.anim.bounce))
+            popIn(v, 0L)
+            followers.forEachIndexed { i, f -> popIn(f.view, 60L * (i + 1)) }
         } else if (animate) {
-            v.startAnimation(AnimationUtils.loadAnimation(ui, R.anim.bounce))
+            popIn(v, 0L)
         }
         bindBubble()
+    }
+
+    /** Springy entrance: grows from nothing with an overshoot, like DirectChat's heads. */
+    private fun popIn(v: View, delay: Long) {
+        v.scaleX = 0.2f
+        v.scaleY = 0.2f
+        v.alpha = 0f
+        v.animate().scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(delay).setDuration(380)
+            .setInterpolator(OvershootInterpolator(2.6f)).start()
+    }
+
+    // ---------------- stacked heads that trail the bubble ----------------
+
+    /** Heads to show in the stack: other open chats (newest first), not the one on the bubble. */
+    private fun followerConvs(): List<com.ershad.directbubbles.core.Conversation> {
+        val top = focusConvKey()
+        return ChatStore.activeOnes().filter { it.key != top }.take(MAX_FOLLOWERS)
+    }
+
+    private fun stackOffset(i: Int): Pair<Float, Float> {
+        val p = bubbleParams
+        val left = p != null && p.x < screenSize().x / 2
+        // Peek out below and slightly inward, so the pile is visible at the screen edge.
+        val dx = dp(5) * (i + 1) * (if (left) 1 else -1)
+        val dy = dp(7) * (i + 1)
+        return dx.toFloat() to dy.toFloat()
+    }
+
+    private fun createFollowers(main: WindowManager.LayoutParams) {
+        removeFollowers()
+        val convs = followerConvs()
+        // Deepest first, so the nearest follower is drawn on top of the farther one.
+        for (i in convs.indices.reversed()) {
+            val c = convs[i]
+            val v = LayoutInflater.from(ui).inflate(R.layout.bubble_head, null)
+            applyBubbleSize(v)
+            v.findViewById<ImageView>(R.id.bubble_avatar).setImageBitmap(Avatars.forConv(c))
+            v.findViewById<ImageView>(R.id.bubble_badge).visibility = View.GONE
+            v.findViewById<View>(R.id.bubble_unread).visibility = View.GONE
+            v.findViewById<View>(R.id.bubble_avatar).elevation = 3f * ui.resources.displayMetrics.density
+            val p = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            )
+            p.gravity = Gravity.TOP or Gravity.START
+            val left = main.x < screenSize().x / 2
+            p.x = main.x + dp(5) * (i + 1) * (if (left) 1 else -1)
+            p.y = main.y + dp(7) * (i + 1)
+            try {
+                wm.addView(v, p)
+            } catch (e: Exception) {
+                continue
+            }
+            followers.add(0, Follower(v, p, p.x.toFloat(), p.y.toFloat()))
+        }
+    }
+
+    private fun removeFollowers() {
+        followLoopOn = false
+        for (f in followers) safeRemove(f.view)
+        followers.clear()
+    }
+
+    /** Keeps the stack's pictures in sync with the open chats (hides extra followers). */
+    private fun bindFollowers() {
+        val convs = followerConvs()
+        followers.forEachIndexed { i, f ->
+            val c = convs.getOrNull(i)
+            if (c == null) f.view.visibility = View.INVISIBLE
+            else {
+                f.view.visibility = View.VISIBLE
+                f.view.findViewById<ImageView>(R.id.bubble_avatar).setImageBitmap(Avatars.forConv(c))
+            }
+        }
+    }
+
+    /** Each follower chases the one in front of it every frame: a soft, trailing chain. */
+    private val followTick = object : android.view.Choreographer.FrameCallback {
+        override fun doFrame(t: Long) {
+            val main = bubbleParams
+            if (!followLoopOn || main == null || followers.isEmpty()) {
+                followLoopOn = false
+                return
+            }
+            var leadX = main.x.toFloat()
+            var leadY = main.y.toFloat()
+            var moving = false
+            followers.forEachIndexed { i, f ->
+                val (ox, oy) = stackOffset(0)
+                val tx = leadX + ox
+                val ty = leadY + oy
+                f.fx += (tx - f.fx) * 0.30f
+                f.fy += (ty - f.fy) * 0.30f
+                if (kotlin.math.abs(tx - f.fx) > 0.6f || kotlin.math.abs(ty - f.fy) > 0.6f) moving = true
+                else { f.fx = tx; f.fy = ty }
+                val nx = f.fx.roundToInt()
+                val ny = f.fy.roundToInt()
+                if (nx != f.params.x || ny != f.params.y) {
+                    f.params.x = nx
+                    f.params.y = ny
+                    try {
+                        wm.updateViewLayout(f.view, f.params)
+                    } catch (_: Exception) {
+                    }
+                }
+                leadX = f.fx
+                leadY = f.fy
+                if (i >= MAX_FOLLOWERS) return@forEachIndexed
+            }
+            if (moving) android.view.Choreographer.getInstance().postFrameCallback(this)
+            else followLoopOn = false
+        }
+    }
+
+    private fun kickFollowers() {
+        if (followers.isEmpty() || followLoopOn) return
+        followLoopOn = true
+        android.view.Choreographer.getInstance().postFrameCallback(followTick)
     }
 
     /** Preferences → Bubble Size (40–80 dp). */
@@ -239,6 +381,7 @@ object OverlayController {
 
     private fun bindBubble() {
         val v = bubble ?: return
+        bindFollowers()
         val conv = ChatStore.get(focusConvKey())
         val avatar = v.findViewById<ImageView>(R.id.bubble_avatar)
         val badge = v.findViewById<ImageView>(R.id.bubble_badge)
@@ -318,6 +461,7 @@ object OverlayController {
     private fun removeBubble() {
         hidePreview()
         snapAnimator?.cancel()
+        removeFollowers()
         bubble?.let { safeRemove(it) }
         bubble = null
         bubbleParams = null
@@ -466,7 +610,8 @@ object OverlayController {
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(260)
+                        .setInterpolator(OvershootInterpolator(3.2f)).start()
                     stopFollow()
                     if (dragging) {
                         if (inTarget) { p.x = tx; p.y = ty; updateBubble() }
@@ -517,6 +662,7 @@ object OverlayController {
             wm.updateViewLayout(v, p)
         } catch (_: Exception) {
         }
+        kickFollowers()
     }
 
     // ---------------- helpers ----------------
