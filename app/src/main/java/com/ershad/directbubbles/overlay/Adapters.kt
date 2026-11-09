@@ -78,7 +78,7 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
     private fun isRecentOwn(position: Int): Boolean = position >= items.size - 5
 
     companion object {
-        const val UNCONFIRMED_AFTER_MS = 25_000L
+        const val UNCONFIRMED_AFTER_MS = 12_000L
 
         /** Can this outgoing message be sent again by tapping it? */
         fun canRetry(m: ChatMessage): Boolean {
@@ -142,13 +142,13 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
                 m.status == ChatMessage.STATUS_FAILED -> {
                     status.visibility = View.VISIBLE
                     status.setTextColor(ctx.getColor(R.color.unread_red))
-                    status.text = "Not sent · tap to retry"
+                    status.text = "Not sent · tap: retry · hold: send in the app"
                 }
                 // Sent, but the app hasn't confirmed it yet after a while (only for my newest replies).
                 m.status == ChatMessage.STATUS_OK && age in UNCONFIRMED_AFTER_MS..(10 * 60_000L) && isRecentOwn(position) -> {
                     status.visibility = View.VISIBLE
                     status.setTextColor(ctx.getColor(R.color.text_secondary))
-                    status.text = "Not confirmed yet · tap to send again"
+                    status.text = "Not confirmed · tap: send again · hold: send in the app"
                 }
                 m.status == ChatMessage.STATUS_SENDING && age > 3_000L -> {
                     status.visibility = View.VISIBLE

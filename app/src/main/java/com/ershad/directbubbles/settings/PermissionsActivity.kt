@@ -99,9 +99,13 @@ class PermissionsActivity : Activity() {
                 "2. Same page: turn OFF \"Pause app activity if unused\"\n" +
                 "3. Permissions: Autostart, Floating window, Display on lock screen, Background pop-ups ON\n" +
                 "4. Settings → Battery → Power saving management: turn OFF \"Sleep standby optimization\" and \"Disconnect from internet after screen is off\"\n" +
-                "5. Recent apps: pull Instagram's card down / tap its lock so it is not cleared.",
+                "5. Recent apps: pull Instagram's card down / tap its lock so it is not cleared.\n" +
+                "6. Do steps 1-3 for DIRECT BUBBLES too (Autostart / background pop-ups / high background power usage). " +
+                "vivo blocks one app from waking another unless the sender is allowed. Direct Bubbles is the one waking Instagram.\n" +
+                "If a reply still shows \"Not confirmed\", hold the message: it copies the text and opens the chat in Instagram so you can paste and send.",
             null
         ).first)
+        list.addView(SettingsUi.row(this, "Direct Bubbles app settings", "Set Autostart + High background power usage here too", null) { openAppInfo() }.first)
         list.addView(SettingsUi.row(this, "Instagram app settings", "Open Instagram's App info page", null) { openAppInfoOf("com.instagram.android") }.first)
         list.addView(SettingsUi.row(this, "WhatsApp app settings", "Open WhatsApp's App info page", null) { openAppInfoOf("com.whatsapp") }.first)
         list.addView(SettingsUi.row(this, "Battery settings", "Open the phone's battery / power saving screen", null) {

@@ -107,6 +107,19 @@ class PopupUi(
             val m = threadAdapter.getItem(position)
             if (ThreadAdapter.canRetry(m)) retry(m)
         }
+        // Hold on a stuck reply: copy it and open the chat in Instagram/WhatsApp itself (always works).
+        threadList.setOnItemLongClickListener { _, _, position, _ ->
+            val m = threadAdapter.getItem(position)
+            if (!ThreadAdapter.canRetry(m)) return@setOnItemLongClickListener false
+            val c = ChatStore.get(currentKey) ?: return@setOnItemLongClickListener false
+            val appCtx = ctx.applicationContext
+            appCtx.getSystemService(android.content.ClipboardManager::class.java)
+                ?.setPrimaryClip(android.content.ClipData.newPlainText("Reply", m.text))
+            Toast.makeText(appCtx, "Text copied: paste it in ${AppIcons.label(appCtx, c.pkg)}", Toast.LENGTH_LONG).show()
+            onCollapse()
+            ReplySender.open(appCtx, c.contentIntent, c.pkg)
+            true
+        }
 
         root.onBack = { onCollapse() }                     // Back minimizes to the floating bubble
         root.setOnClickListener { onCollapse() }           // tap on the transparent space
