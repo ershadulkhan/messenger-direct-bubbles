@@ -204,28 +204,39 @@ class PopupUi(
         }
     }
 
-    /** DirectChat-style: every head springs out of the bubble into its place in the row (staggered). */
+    /** Size of the floating bubble's photo relative to a head in the row (48dp), so the hand-off matches. */
+    private fun bubbleRatio(): Float = com.ershad.directbubbles.core.Prefs.bubbleSize(ctx) / 48f
+
+    /**
+     * DirectChat-style open: the head you tapped starts exactly where the bubble was (same size) and
+     * slides into its place; the other heads come out of it, fading in, one after another.
+     */
     private fun flyHeadsOut() {
         val a = anchor ?: return
-        // Hide the row until the first frame is laid out, so the heads never flash in their final place.
         headsRow.alpha = 0f
         headsRow.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
                 headsRow.viewTreeObserver.removeOnPreDrawListener(this)
                 val loc = IntArray(2)
+                val ratio = bubbleRatio()
                 for (i in 0 until headsRow.childCount) {
                     val h = headsRow.getChildAt(i)
+                    if (h.width == 0) continue
+                    val main = h === selectedHead
                     h.animate().cancel()
                     h.translationX = 0f
                     h.translationY = 0f
                     h.getLocationOnScreen(loc)
                     h.translationX = (a.x - (loc[0] + h.width / 2)).toFloat()
                     h.translationY = (a.y - (loc[1] + h.height / 2)).toFloat()
-                    h.scaleX = 0.8f
-                    h.scaleY = 0.8f
-                    h.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
-                        .setStartDelay(i * 18L).setDuration(320)
-                        .setInterpolator(android.view.animation.OvershootInterpolator(1.1f)).start()
+                    h.translationZ = if (main) 8f else 0f
+                    h.scaleX = if (main) ratio else 0.8f
+                    h.scaleY = h.scaleX
+                    h.alpha = if (main) 1f else 0f
+                    h.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f).alpha(1f)
+                        .setStartDelay(if (main) 0L else 30L + i * 16L).setDuration(300)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f))
+                        .withEndAction { h.translationZ = 0f }.start()
                 }
                 headsRow.alpha = 1f
                 positionArrow()
@@ -234,13 +245,18 @@ class PopupUi(
         })
     }
 
-    /** Minimize: heads gather back into the bubble's spot, last one finishes the close. */
+    /**
+     * Minimize: the selected head glides back to the bubble's spot and grows to bubble size, while the
+     * other heads follow it in and fade away, so the bubble that appears is exactly the head you see land.
+     */
     private fun flyHeadsIn(end: () -> Unit) {
         val a = anchor
         val n = headsRow.childCount
         if (a == null || n == 0) { end(); return }
         val loc = IntArray(2)
-        var started = false
+        val ratio = bubbleRatio()
+        val main = selectedHead?.takeIf { it.parent === headsRow && it.width > 0 }
+        var lastAnim: View? = null
         for (i in 0 until n) {
             val h = headsRow.getChildAt(i)
             if (h.width == 0) continue
@@ -248,14 +264,19 @@ class PopupUi(
             h.getLocationOnScreen(loc)
             val dx = a.x - (loc[0] - h.translationX.toInt() + h.width / 2)
             val dy = a.y - (loc[1] - h.translationY.toInt() + h.height / 2)
-            val last = i == n - 1
-            h.animate().translationX(dx.toFloat()).translationY(dy.toFloat()).scaleX(0.75f).scaleY(0.75f)
-                .setStartDelay((n - 1 - i) * 10L).setDuration(220)
-                .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
-                .withEndAction { if (last) end() }.start()
-            started = true
+            val isMain = h === main
+            h.translationZ = if (isMain) 8f else 0f
+            h.animate().translationX(dx.toFloat()).translationY(dy.toFloat())
+                .scaleX(if (isMain) ratio else 0.7f).scaleY(if (isMain) ratio else 0.7f)
+                .alpha(if (isMain || main == null) 1f else 0f)
+                .setStartDelay(0L).setDuration(240)
+                .setInterpolator(android.view.animation.DecelerateInterpolator(1.4f)).start()
+            if (isMain || (main == null && i == n - 1)) lastAnim = h
         }
-        if (!started) end()
+        // Hide the row's arrow/ring decorations instantly so only the photos travel.
+        selectedHead?.findViewById<View>(R.id.head_ring)?.visibility = View.INVISIBLE
+        val l = lastAnim
+        if (l == null) end() else l.postDelayed({ end() }, 250)
     }
 
     fun attach(key: String?, focusInput: Boolean = false, inboxPkg: String? = null) {
@@ -264,7 +285,7 @@ class PopupUi(
         root.background?.alpha = 255
         root.findViewById<View>(R.id.chat_top_arrow).alpha = 1f
         for (i in 0 until headsRow.childCount) headsRow.getChildAt(i).apply {
-            animate().cancel(); translationX = 0f; translationY = 0f; scaleX = 1f; scaleY = 1f
+            animate().cancel(); translationX = 0f; translationY = 0f; scaleX = 1f; scaleY = 1f; alpha = 1f; translationZ = 0f
         }
         root.alpha = 1f
         panel.alpha = 1f
