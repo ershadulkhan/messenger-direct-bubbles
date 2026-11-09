@@ -64,7 +64,7 @@ object OverlayController {
     private class Follower(val view: View, val params: WindowManager.LayoutParams, var fx: Float, var fy: Float)
     private val followers = ArrayList<Follower>()
     private var followLoopOn = false
-    private const val MAX_FOLLOWERS = 2
+    private const val MAX_FOLLOWERS = 0   // no stacked heads behind the bubble
     private var preview: View? = null
     private val hidePreviewRunnable = Runnable { hidePreview() }
     private val refreshRunnable = Runnable { refreshNow() }
