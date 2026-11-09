@@ -18,6 +18,9 @@ class ChatMessage(
     var sentAt: Long = 0L
     var confirmedAt: Long = 0L
     var route: String = ""
+    /** How many times it was re-sent automatically because the app woke up / was woken. */
+    var autoResends: Int = 0
+    var woke: Boolean = false
 
     companion object {
         const val KIND_TEXT = 0

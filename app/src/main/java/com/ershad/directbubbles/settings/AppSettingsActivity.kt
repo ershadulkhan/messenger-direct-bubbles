@@ -77,6 +77,36 @@ class AppSettingsActivity : Activity() {
         }
         list.addView(hideRow)
 
+        // ----- Reply delivery -----
+        list.addView(SettingsUi.section(this, "Reply delivery"))
+        val resendCheck = CheckBox(this)
+        resendCheck.isChecked = Prefs.autoResend(this, pkg)
+        resendCheck.isClickable = false
+        val (resendRow, _) = SettingsUi.row(
+            this, "Re-send stuck replies when $label wakes up",
+            "If a reply isn't confirmed, it waits and goes out again automatically the moment $label is active in the background (it posts or clears a notification).",
+            resendCheck
+        ) {
+            val on = !resendCheck.isChecked
+            resendCheck.isChecked = on
+            Prefs.setAutoResend(this, pkg, on)
+        }
+        list.addView(resendRow)
+
+        val wakeCheck = CheckBox(this)
+        wakeCheck.isChecked = Prefs.wakeApp(this, pkg)
+        wakeCheck.isClickable = false
+        val (wakeRow, _) = SettingsUi.row(
+            this, "Wake $label when a reply is stuck",
+            "If a reply isn't confirmed within 6 seconds, Direct Bubbles opens this chat in $label underneath the bubble so the phone lets it run, then re-sends if needed. You'll find $label open after you minimize.",
+            wakeCheck
+        ) {
+            val on = !wakeCheck.isChecked
+            wakeCheck.isChecked = on
+            Prefs.setWakeApp(this, pkg, on)
+        }
+        list.addView(wakeRow)
+
         val (themeRow, _) = SettingsUi.row(this, "Themes", "Set up the colours and style of the $label chat window") {
             startActivity(Intent(this, ThemeActivity::class.java).putExtra(EXTRA_PKG, pkg))
         }

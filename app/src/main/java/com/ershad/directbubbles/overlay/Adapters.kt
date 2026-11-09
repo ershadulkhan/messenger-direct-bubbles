@@ -74,6 +74,29 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
         notifyDataSetChanged()
     }
 
+    /**
+     * Delivery icon after the time:  clock = sending,  outlined circle-check = handed to the app,
+     * green filled circle-check = the app confirmed it,  orange clock = stuck / waiting for the app to wake,
+     * red "!" = not sent.
+     */
+    private fun addTick(timeTv: TextView, m: ChatMessage) {
+        val age = System.currentTimeMillis() - m.time
+        val (res, tint) = when {
+            m.status == ChatMessage.STATUS_CONFIRMED -> R.drawable.ic_tick_confirmed to false
+            m.status == ChatMessage.STATUS_FAILED -> R.drawable.ic_tick_failed to false
+            m.status == ChatMessage.STATUS_SENDING -> R.drawable.ic_tick_sending to true
+            m.status == ChatMessage.STATUS_OK && age > UNCONFIRMED_AFTER_MS -> R.drawable.ic_tick_waiting to false
+            else -> R.drawable.ic_tick_sent to true
+        }
+        val d = ctx.getDrawable(res)?.mutate() ?: return
+        val size = (timeTv.textSize * 1.15f).toInt()
+        d.setBounds(0, 0, size, size)
+        if (tint) d.setTint(timeTv.currentTextColor)
+        val sb = android.text.SpannableStringBuilder(timeTv.text).append("  ")
+        sb.setSpan(android.text.style.ImageSpan(d, android.text.style.DynamicDrawableSpan.ALIGN_BOTTOM), sb.length - 1, sb.length, 0)
+        timeTv.text = sb
+    }
+
     /** Only the last few of my replies can show "Not confirmed yet". */
     private fun isRecentOwn(position: Int): Boolean = position >= items.size - 5
 
@@ -118,14 +141,7 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
         } else m.text
         // Exact time inside every bubble: "06:11 pm" (or 18:11 with 24-hour time).
         val timeTv = v.findViewById<TextView>(R.id.msg_time)
-        // ✓ = handed to Instagram/WhatsApp, ✓✓ = the app confirmed it.
-        timeTv.text = TimeFmt.time(ctx, m.time) + when {
-            !m.outgoing -> ""
-            m.status == ChatMessage.STATUS_CONFIRMED -> " ✓✓"
-            m.status == ChatMessage.STATUS_OK -> " ✓"
-            m.status == ChatMessage.STATUS_SENDING -> " ⏳"
-            else -> ""
-        }
+        timeTv.text = TimeFmt.time(ctx, m.time)
         val bubble = v.findViewById<View>(R.id.msg_bubble)
         val t = theme
         if (t != null) {
@@ -134,6 +150,7 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
             if (!m.outgoing) v.findViewById<TextView>(R.id.msg_sender).setTextColor(Themes.subtleOn(t.chatBg))
         }
         if (isCall && m.text.startsWith("Missed")) msgText.setTextColor(ctx.getColor(R.color.unread_red))
+        if (m.outgoing && !isCall) addTick(timeTv, m)
 
         if (m.outgoing) {
             val status = v.findViewById<TextView>(R.id.msg_status)
@@ -148,7 +165,7 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
                 m.status == ChatMessage.STATUS_OK && age in UNCONFIRMED_AFTER_MS..(10 * 60_000L) && isRecentOwn(position) -> {
                     status.visibility = View.VISIBLE
                     status.setTextColor(ctx.getColor(R.color.text_secondary))
-                    status.text = "Not confirmed · tap: send again · hold: send in the app"
+                    status.text = "Waiting for the app · re-sends when it wakes · tap: send now · hold: send in the app"
                 }
                 m.status == ChatMessage.STATUS_SENDING && age > 3_000L -> {
                     status.visibility = View.VISIBLE

@@ -456,6 +456,61 @@ class PopupUi(
             handler.postDelayed({ flushQueued(appCtx, key) }, delay)
         }
 
+        private const val WAKE_AFTER_MS = 6_000L
+        private const val AWAKE_SETTLE_MS = 5_000L
+
+        private fun stuck(m: ChatMessage, now: Long): Boolean =
+            m.outgoing && m.status == ChatMessage.STATUS_OK && m.sentAt > 0 && m.confirmedAt == 0L &&
+                now - m.sentAt in 10_000L..(30 * 60_000L)
+
+        private val awakeRunnables = HashMap<String, Runnable>()
+
+        /**
+         * [pkg] posted or cleared a notification, so its process is running. A reply that OriginOS held
+         * back is usually delivered now; give it a few seconds to confirm, then re-send whatever is still stuck.
+         */
+        fun onAppAwake(ctx: android.content.Context, pkg: String) {
+            val appCtx = ctx.applicationContext
+            if (!com.ershad.directbubbles.core.Prefs.autoResend(appCtx, pkg)) return
+            awakeRunnables[pkg]?.let { handler.removeCallbacks(it) }
+            val r = Runnable {
+                awakeRunnables.remove(pkg)
+                val now = System.currentTimeMillis()
+                for (c in ChatStore.all().filter { it.pkg == pkg }) {
+                    for (m in c.messages.takeLast(8)) {
+                        if (!stuck(m, now) || m.autoResends >= 2) continue
+                        m.autoResends++
+                        m.status = ChatMessage.STATUS_SENDING
+                        queue(appCtx, c, m)
+                    }
+                }
+                ChatStore.notifyChanged()
+            }
+            awakeRunnables[pkg] = r
+            handler.postDelayed(r, AWAKE_SETTLE_MS)
+        }
+
+        /** After a send: if not confirmed in a few seconds, wake the app (if enabled) and re-send if still stuck. */
+        fun watch(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+            val appCtx = ctx.applicationContext
+            if (!com.ershad.directbubbles.core.Prefs.wakeApp(appCtx, c.pkg)) return
+            handler.postDelayed({
+                if (m.confirmedAt != 0L || m.status != ChatMessage.STATUS_OK || m.woke) return@postDelayed
+                m.woke = true
+                // Opens the chat in Instagram underneath the bubble window: its process starts and
+                // OriginOS releases the held reply. Popup stays on top.
+                ReplySender.open(appCtx, c.contentIntent, c.pkg)
+                handler.postDelayed({
+                    if (m.confirmedAt == 0L && m.status == ChatMessage.STATUS_OK && m.autoResends < 2) {
+                        m.autoResends++
+                        m.status = ChatMessage.STATUS_SENDING
+                        queue(appCtx, c, m)
+                        ChatStore.notifyChanged()
+                    }
+                }, 4_000L)
+            }, WAKE_AFTER_MS)
+        }
+
         /** Sends this chat's waiting replies, one at a time. Called on new notifications and by a timer. */
         fun flushQueued(ctx: android.content.Context, key: String) {
             val list = queued[key] ?: return
@@ -465,7 +520,7 @@ class PopupUi(
                 if (m.status != ChatMessage.STATUS_SENDING) { list.removeAt(0); continue }
                 if (inFlight(c)) { schedulePump(ctx, key, 1200); break }
                 when (sendNow(ctx, c, m, 0)) {
-                    null -> { m.status = ChatMessage.STATUS_OK; markSent(c, m); list.removeAt(0) }
+                    null -> { m.status = ChatMessage.STATUS_OK; markSent(c, m); list.removeAt(0); watch(ctx, c, m) }
                     "none" -> break   // wait for this chat's next notification
                     else -> { m.status = ChatMessage.STATUS_FAILED; list.removeAt(0) }
                 }
@@ -760,6 +815,7 @@ class PopupUi(
             null -> {
                 m.status = ChatMessage.STATUS_OK
                 markSent(c, m)
+                watch(appCtx, c, m)
                 root.postDelayed({ if (attached) refresh() }, ThreadAdapter.UNCONFIRMED_AFTER_MS + 500)
             }
             "none" -> {
