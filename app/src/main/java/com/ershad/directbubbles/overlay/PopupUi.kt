@@ -196,6 +196,15 @@ class PopupUi(
     /** Screen point of the floating bubble: heads fly out of it on open and back into it on minimize. */
     var anchor: android.graphics.Point? = null
 
+    /** Called once the window is visibly drawn (the controller then removes the floating bubble). */
+    var onShown: (() -> Unit)? = null
+
+    private fun shown() {
+        val cb = onShown ?: return
+        onShown = null
+        cb()
+    }
+
     private fun noClip() {
         root.background = root.background?.mutate()
         for (v in listOf<View>(root, root.findViewById(R.id.popup_content), headsScroll, headsRow)) {
@@ -212,7 +221,7 @@ class PopupUi(
      * slides into its place; the other heads come out of it, fading in, one after another.
      */
     private fun flyHeadsOut() {
-        val a = anchor ?: return
+        val a = anchor ?: run { root.post { shown() }; return }
         headsRow.alpha = 0f
         headsRow.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
@@ -233,13 +242,18 @@ class PopupUi(
                     h.scaleX = if (main) ratio else 0.8f
                     h.scaleY = h.scaleX
                     h.alpha = if (main) 1f else 0f
+                    val ring = h.findViewById<View>(R.id.head_ring)
+                    val ringWas = ring?.visibility ?: View.INVISIBLE
+                    if (main) ring?.visibility = View.INVISIBLE   // the blue ring appears once it has landed
                     h.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f).alpha(1f)
                         .setStartDelay(if (main) 0L else 30L + i * 16L).setDuration(300)
                         .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f))
-                        .withEndAction { h.translationZ = 0f }.start()
+                        .withEndAction { h.translationZ = 0f; if (main) ring?.visibility = ringWas }.start()
                 }
                 headsRow.alpha = 1f
                 positionArrow()
+                // This frame shows the tapped head exactly over the bubble: now the bubble can go.
+                root.postOnAnimation { shown() }
                 return true
             }
         })
@@ -328,7 +342,7 @@ class PopupUi(
             // Instant Reply: keyboard up, ready to type.
             if (focusInput) input.post { focusInput() }
         } else showInbox(inboxPkg)
-        if (justAdded) { justAdded = false; flyHeadsOut() }
+        if (justAdded) { justAdded = false; flyHeadsOut() } else shown()
     }
 
     private var justAdded = false
@@ -356,14 +370,17 @@ class PopupUi(
         }
         flyHeadsIn {
             if (attached) return@flyHeadsIn   // re-opened while closing: keep the window
-            try {
-                wm.removeView(root)
-            } catch (_: Exception) {
-            }
-            added = false
-            // No resets here: the window is still on screen for a frame after removeView, and putting the
-            // heads / dim back would flash. attach() resets everything before the next open.
+            // Put the floating bubble on screen first (exactly where the head landed), and remove this
+            // window only after the bubble has drawn, so there is never a frame with neither.
             onDone()
+            root.postDelayed({
+                if (attached) return@postDelayed
+                try {
+                    wm.removeView(root)
+                } catch (_: Exception) {
+                }
+                added = false
+            }, 48)
         }
     }
 

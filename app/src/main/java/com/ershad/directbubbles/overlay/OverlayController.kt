@@ -115,8 +115,11 @@ object OverlayController {
             val bp = bubbleParams
             if (bp != null && b.width > 0) android.graphics.Point(bp.x + b.width / 2, bp.y + b.height / 2) else null
         } ?: homePoint()
-        removeBubble()
+        // The bubble stays on screen until the chat window has drawn its first frame (with the tapped
+        // head sitting exactly on top of it); only then is it removed. No empty frame in between.
+        bubbleParams?.let { restoreAt = android.graphics.Point(it.x, it.y) }
         val p = popup ?: PopupUi(ui, wm) { collapsePopup() }.also { popup = it }
+        p.onShown = { main.post { if (popup?.attached == true) removeBubble() } }
         p.anchor = anchor
         p.onFocus = { k, pkg -> focusKey = k; focusPkg = pkg }
         try {
@@ -124,6 +127,7 @@ object OverlayController {
         } catch (e: Exception) {
             Log.w(TAG, "popup failed", e)
             popup = null
+            removeBubble()
             return
         }
     }
@@ -146,6 +150,9 @@ object OverlayController {
 
     /** Set when the bubble comes back from a minimize: appear instantly where the heads landed. */
     private var noPopOnce = false
+
+    /** Exact spot the bubble had when the window opened: it comes back there (where the head lands). */
+    private var restoreAt: android.graphics.Point? = null
 
     /** Centre of the floating bubble's resting spot (remembered side / height). */
     private fun homePoint(): android.graphics.Point {
@@ -239,6 +246,8 @@ object OverlayController {
             p.x = if (left) -dp(TUCK_DP) else screen.x - size + dp(TUCK_DP)
             val y = if (remember) Prefs.bubbleY(a, screen.y / 4) else screen.y / 4
             p.y = y.coerceIn(dp(48), max(dp(48), screen.y - size - dp(96)))
+            restoreAt?.let { p.x = it.x; p.y = it.y }
+            restoreAt = null
             v.setOnTouchListener(BubbleTouch(v, p))
             createFollowers(p)   // added before the bubble, so they sit underneath it
             try {
