@@ -64,7 +64,7 @@ object OverlayController {
     private class Follower(val view: View, val params: WindowManager.LayoutParams, var fx: Float, var fy: Float)
     private val followers = ArrayList<Follower>()
     private var followLoopOn = false
-    private const val MAX_FOLLOWERS = 4   // hidden exactly behind the bubble; they only show as a trail while it moves
+    private const val MAX_FOLLOWERS = 0   // no hidden heads behind the bubble (they showed as a grey haze around it)
     /** How far the floating bubble tucks past the screen edge (DirectChat-style half-tucked head). */
     private const val TUCK_DP = 18
     private var preview: View? = null
