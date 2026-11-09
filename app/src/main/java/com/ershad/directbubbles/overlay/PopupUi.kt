@@ -193,9 +193,73 @@ class PopupUi(
     /** Tells the floating bubble which head was tapped last (a person's key, or an app's package). */
     var onFocus: ((key: String?, pkg: String?) -> Unit)? = null
 
+    /** Screen point of the floating bubble: heads fly out of it on open and back into it on minimize. */
+    var anchor: android.graphics.Point? = null
+
+    private fun noClip() {
+        root.background = root.background?.mutate()
+        for (v in listOf<View>(root, root.findViewById(R.id.popup_content), headsScroll, headsRow)) {
+            (v as? android.view.ViewGroup)?.clipChildren = false
+            (v as? android.view.ViewGroup)?.clipToPadding = false
+        }
+    }
+
+    /** DirectChat-style: every head springs out of the bubble into its place in the row (staggered). */
+    private fun flyHeadsOut() {
+        val a = anchor ?: return
+        headsRow.post {
+            val loc = IntArray(2)
+            for (i in 0 until headsRow.childCount) {
+                val h = headsRow.getChildAt(i)
+                if (h.width == 0) continue
+                h.animate().cancel()
+                h.translationX = 0f
+                h.translationY = 0f
+                h.getLocationOnScreen(loc)
+                h.translationX = (a.x - (loc[0] + h.width / 2)).toFloat()
+                h.translationY = (a.y - (loc[1] + h.height / 2)).toFloat()
+                h.scaleX = 0.7f
+                h.scaleY = 0.7f
+                h.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
+                    .setStartDelay(i * 22L).setDuration(360)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(1.15f)).start()
+            }
+            positionArrow()
+        }
+    }
+
+    /** Minimize: heads gather back into the bubble's spot, last one finishes the close. */
+    private fun flyHeadsIn(end: () -> Unit) {
+        val a = anchor
+        val n = headsRow.childCount
+        if (a == null || n == 0) { end(); return }
+        val loc = IntArray(2)
+        var started = false
+        for (i in 0 until n) {
+            val h = headsRow.getChildAt(i)
+            if (h.width == 0) continue
+            h.animate().cancel()
+            h.getLocationOnScreen(loc)
+            val dx = a.x - (loc[0] - h.translationX.toInt() + h.width / 2)
+            val dy = a.y - (loc[1] - h.translationY.toInt() + h.height / 2)
+            val last = i == n - 1
+            h.animate().translationX(dx.toFloat()).translationY(dy.toFloat()).scaleX(0.75f).scaleY(0.75f)
+                .setStartDelay((n - 1 - i) * 14L).setDuration(250)
+                .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
+                .withEndAction { if (last) end() }.start()
+            started = true
+        }
+        if (!started) end()
+    }
+
     fun attach(key: String?, focusInput: Boolean = false, inboxPkg: String? = null) {
         root.animate().cancel()
         panel.animate().cancel()
+        root.background?.alpha = 255
+        root.findViewById<View>(R.id.chat_top_arrow).alpha = 1f
+        for (i in 0 until headsRow.childCount) headsRow.getChildAt(i).apply {
+            animate().cancel(); translationX = 0f; translationY = 0f; scaleX = 1f; scaleY = 1f
+        }
         root.alpha = 1f
         panel.alpha = 1f
         panel.scaleX = 1f
@@ -215,10 +279,11 @@ class PopupUi(
                 WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
             p.gravity = Gravity.TOP or Gravity.START
             p.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            noClip()
             wm.addView(root, p)
             added = true
             panel.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.popup_enter))
-            headsScroll.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.heads_enter))
+            justAdded = true
         }
         attached = true
         if (key != null && ChatStore.get(key) != null) {
@@ -226,7 +291,10 @@ class PopupUi(
             // Instant Reply: keyboard up, ready to type.
             if (focusInput) input.post { focusInput() }
         } else showInbox(inboxPkg)
+        if (justAdded) { justAdded = false; flyHeadsOut() }
     }
+
+    private var justAdded = false
 
     fun detach(onDone: () -> Unit) {
         if (!attached) {
@@ -236,20 +304,33 @@ class PopupUi(
         attached = false
         hideKeyboard()
         endDragUi()
-        // Shrink back towards the chat heads (top-right), like Messenger.
-        panel.pivotX = panel.width * 0.92f
+        // The window shrinks into the bubble's corner while the heads gather back into the bubble.
+        val a = anchor
+        panel.pivotX = if (a != null && a.x < root.width / 2) panel.width * 0.08f else panel.width * 0.92f
         panel.pivotY = 0f
-        headsScroll.animate().alpha(0f).translationX(headsScroll.width * 0.2f).setDuration(200).start()
-        root.animate().alpha(0f).setDuration(220).start()
-        panel.animate().scaleX(0.55f).scaleY(0.55f).alpha(0f).setDuration(220)
-            .setInterpolator(android.view.animation.AccelerateInterpolator()).withEndAction {
+        root.findViewById<View>(R.id.chat_top_arrow).animate().alpha(0f).setDuration(120).start()
+        panel.animate().scaleX(0.5f).scaleY(0.5f).alpha(0f).setDuration(200)
+            .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
+        root.background?.let { bg ->
+            val anim = android.animation.ValueAnimator.ofInt(255, 0)
+            anim.duration = 220
+            anim.addUpdateListener { bg.alpha = it.animatedValue as Int }
+            anim.start()
+        }
+        flyHeadsIn {
+            if (attached) return@flyHeadsIn   // re-opened while closing: keep the window
             try {
                 wm.removeView(root)
             } catch (_: Exception) {
             }
             added = false
+            root.background?.alpha = 255
+            root.findViewById<View>(R.id.chat_top_arrow).alpha = 1f
+            for (i in 0 until headsRow.childCount) headsRow.getChildAt(i).apply {
+                translationX = 0f; translationY = 0f; scaleX = 1f; scaleY = 1f
+            }
             onDone()
-        }.start()
+        }
     }
 
     fun refresh() {

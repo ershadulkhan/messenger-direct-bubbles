@@ -64,7 +64,9 @@ object OverlayController {
     private class Follower(val view: View, val params: WindowManager.LayoutParams, var fx: Float, var fy: Float)
     private val followers = ArrayList<Follower>()
     private var followLoopOn = false
-    private const val MAX_FOLLOWERS = 0   // no stacked heads behind the bubble
+    private const val MAX_FOLLOWERS = 4   // hidden exactly behind the bubble; they only show as a trail while it moves
+    /** How far the floating bubble tucks past the screen edge (DirectChat-style half-tucked head). */
+    private const val TUCK_DP = 18
     private var preview: View? = null
     private val hidePreviewRunnable = Runnable { hidePreview() }
     private val refreshRunnable = Runnable { refreshNow() }
@@ -108,8 +110,14 @@ object OverlayController {
             return
         }
         hidePreview()
+        // Where the floating bubble is: the chat heads fly out of (and later back into) this point.
+        val anchor = bubble?.let { b ->
+            val bp = bubbleParams
+            if (bp != null && b.width > 0) android.graphics.Point(bp.x + b.width / 2, bp.y + b.height / 2) else null
+        } ?: homePoint()
         removeBubble()
         val p = popup ?: PopupUi(ui, wm) { collapsePopup() }.also { popup = it }
+        p.anchor = anchor
         p.onFocus = { k, pkg -> focusKey = k; focusPkg = pkg }
         try {
             p.attach(key, focusInput, inboxPkg)
@@ -131,6 +139,17 @@ object OverlayController {
             val a = app ?: return@detach
             if (Prefs.bubblesOn(a) && canDraw()) showBubble(false)
         }
+    }
+
+    /** Centre of the floating bubble's resting spot (remembered side / height). */
+    private fun homePoint(): android.graphics.Point {
+        val a = app
+        val screen = screenSize()
+        val size = dp((a?.let { Prefs.bubbleSize(it) } ?: 64) + 20)
+        val left = a != null && Prefs.rememberPosition(a) && Prefs.bubbleOnLeft(a)
+        val y = if (a != null && Prefs.rememberPosition(a)) Prefs.bubbleY(a, screen.y / 4) else screen.y / 4
+        val x = if (left) -dp(TUCK_DP) else screen.x - size + dp(TUCK_DP)
+        return android.graphics.Point(x + size / 2, y + size / 2)
     }
 
     /** Preferences → Bubble Size changed: redraw the floating head at the new size. */
@@ -211,7 +230,7 @@ object OverlayController {
             // "Remember last position": put the head where it was last closed/moved.
             val remember = Prefs.rememberPosition(a)
             val left = remember && Prefs.bubbleOnLeft(a)
-            p.x = if (left) -dp(6) else screen.x - size + dp(6)
+            p.x = if (left) -dp(TUCK_DP) else screen.x - size + dp(TUCK_DP)
             val y = if (remember) Prefs.bubbleY(a, screen.y / 4) else screen.y / 4
             p.y = y.coerceIn(dp(48), max(dp(48), screen.y - size - dp(96)))
             v.setOnTouchListener(BubbleTouch(v, p))
@@ -249,14 +268,9 @@ object OverlayController {
         return ChatStore.activeOnes().filter { it.key != top }.take(MAX_FOLLOWERS)
     }
 
-    private fun stackOffset(i: Int): Pair<Float, Float> {
-        val p = bubbleParams
-        val left = p != null && p.x < screenSize().x / 2
-        // Peek out below and slightly inward, so the pile is visible at the screen edge.
-        val dx = dp(5) * (i + 1) * (if (left) 1 else -1)
-        val dy = dp(7) * (i + 1)
-        return dx.toFloat() to dy.toFloat()
-    }
+    /** At rest the other heads sit exactly behind the bubble (invisible); they only show as a trail while moving. */
+    @Suppress("UNUSED_PARAMETER")
+    private fun stackOffset(i: Int): Pair<Float, Float> = 0f to 0f
 
     private fun createFollowers(main: WindowManager.LayoutParams) {
         removeFollowers()
@@ -281,9 +295,8 @@ object OverlayController {
                 PixelFormat.TRANSLUCENT
             )
             p.gravity = Gravity.TOP or Gravity.START
-            val left = main.x < screenSize().x / 2
-            p.x = main.x + dp(5) * (i + 1) * (if (left) 1 else -1)
-            p.y = main.y + dp(7) * (i + 1)
+            p.x = main.x
+            p.y = main.y
             try {
                 wm.addView(v, p)
             } catch (e: Exception) {
@@ -560,8 +573,16 @@ object OverlayController {
             android.view.Choreographer.getInstance().removeFrameCallback(frame)
         }
 
+        private var vt: android.view.VelocityTracker? = null
+
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, e: MotionEvent): Boolean {
+            // Track speed in screen coordinates (the window itself moves under the finger).
+            val ev = MotionEvent.obtain(e)
+            ev.setLocation(e.rawX, e.rawY)
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) { vt?.recycle(); vt = android.view.VelocityTracker.obtain() }
+            vt?.addMovement(ev)
+            ev.recycle()
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.rawX
@@ -616,12 +637,16 @@ object OverlayController {
                     if (dragging) {
                         if (inTarget) { p.x = tx; p.y = ty; updateBubble() }
                         hideTarget()
-                        if (inTarget) dismissAll() else snapToEdge()
+                        val t = vt
+                        t?.computeCurrentVelocity(1000)
+                        if (inTarget) dismissAll() else snapToEdge(t?.xVelocity ?: 0f, t?.yVelocity ?: 0f)
                     } else if (e.actionMasked == MotionEvent.ACTION_UP) {
                         openPopup(focusConvKey(), inboxPkg = focusPkg)
                     }
                     dragging = false
                     inTarget = false
+                    vt?.recycle()
+                    vt = null
                 }
             }
             return true
@@ -629,21 +654,23 @@ object OverlayController {
     }
 
     /** Spring-like snap to the nearest screen edge. */
-    private fun snapToEdge() {
+    private fun snapToEdge(vx: Float = 0f, vy: Float = 0f) {
         val v = bubble ?: return
         val p = bubbleParams ?: return
         val a = app ?: return
         val screen = screenSize()
         val size = if (v.width > 0) v.width else dp(76)
-        val left = p.x + size / 2 < screen.x / 2
-        val tx = if (left) -dp(6) else screen.x - size + dp(6)
-        val ty = p.y.coerceIn(dp(48), max(dp(48), screen.y - size - dp(96)))
+        // A fling throws the bubble to the side it was thrown towards, carrying its vertical speed.
+        val fling = kotlin.math.abs(vx) > dp(700)
+        val left = if (fling) vx < 0 else p.x + size / 2 < screen.x / 2
+        val tx = if (left) -dp(TUCK_DP) else screen.x - size + dp(TUCK_DP)
+        val ty = (p.y + (vy * 0.18f).toInt()).coerceIn(dp(48), max(dp(48), screen.y - size - dp(96)))
         val sx = p.x
         val sy = p.y
         snapAnimator?.cancel()
         val anim = ValueAnimator.ofFloat(0f, 1f)
-        anim.duration = 420
-        anim.interpolator = OvershootInterpolator(1.4f)
+        anim.duration = 520
+        anim.interpolator = OvershootInterpolator(1.1f)
         anim.addUpdateListener { va ->
             val f = va.animatedValue as Float
             p.x = (sx + (tx - sx) * f).roundToInt()
