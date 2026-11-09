@@ -207,25 +207,31 @@ class PopupUi(
     /** DirectChat-style: every head springs out of the bubble into its place in the row (staggered). */
     private fun flyHeadsOut() {
         val a = anchor ?: return
-        headsRow.post {
-            val loc = IntArray(2)
-            for (i in 0 until headsRow.childCount) {
-                val h = headsRow.getChildAt(i)
-                if (h.width == 0) continue
-                h.animate().cancel()
-                h.translationX = 0f
-                h.translationY = 0f
-                h.getLocationOnScreen(loc)
-                h.translationX = (a.x - (loc[0] + h.width / 2)).toFloat()
-                h.translationY = (a.y - (loc[1] + h.height / 2)).toFloat()
-                h.scaleX = 0.7f
-                h.scaleY = 0.7f
-                h.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
-                    .setStartDelay(i * 22L).setDuration(360)
-                    .setInterpolator(android.view.animation.OvershootInterpolator(1.15f)).start()
+        // Hide the row until the first frame is laid out, so the heads never flash in their final place.
+        headsRow.alpha = 0f
+        headsRow.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                headsRow.viewTreeObserver.removeOnPreDrawListener(this)
+                val loc = IntArray(2)
+                for (i in 0 until headsRow.childCount) {
+                    val h = headsRow.getChildAt(i)
+                    h.animate().cancel()
+                    h.translationX = 0f
+                    h.translationY = 0f
+                    h.getLocationOnScreen(loc)
+                    h.translationX = (a.x - (loc[0] + h.width / 2)).toFloat()
+                    h.translationY = (a.y - (loc[1] + h.height / 2)).toFloat()
+                    h.scaleX = 0.8f
+                    h.scaleY = 0.8f
+                    h.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
+                        .setStartDelay(i * 18L).setDuration(320)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(1.1f)).start()
+                }
+                headsRow.alpha = 1f
+                positionArrow()
+                return true
             }
-            positionArrow()
-        }
+        })
     }
 
     /** Minimize: heads gather back into the bubble's spot, last one finishes the close. */
@@ -244,7 +250,7 @@ class PopupUi(
             val dy = a.y - (loc[1] - h.translationY.toInt() + h.height / 2)
             val last = i == n - 1
             h.animate().translationX(dx.toFloat()).translationY(dy.toFloat()).scaleX(0.75f).scaleY(0.75f)
-                .setStartDelay((n - 1 - i) * 14L).setDuration(250)
+                .setStartDelay((n - 1 - i) * 10L).setDuration(220)
                 .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
                 .withEndAction { if (last) end() }.start()
             started = true
@@ -309,11 +315,11 @@ class PopupUi(
         panel.pivotX = if (a != null && a.x < root.width / 2) panel.width * 0.08f else panel.width * 0.92f
         panel.pivotY = 0f
         root.findViewById<View>(R.id.chat_top_arrow).animate().alpha(0f).setDuration(120).start()
-        panel.animate().scaleX(0.5f).scaleY(0.5f).alpha(0f).setDuration(200)
+        panel.animate().scaleX(0.94f).scaleY(0.94f).alpha(0f).setDuration(130)
             .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
         root.background?.let { bg ->
             val anim = android.animation.ValueAnimator.ofInt(255, 0)
-            anim.duration = 220
+            anim.duration = 160
             anim.addUpdateListener { bg.alpha = it.animatedValue as Int }
             anim.start()
         }
@@ -571,26 +577,13 @@ class PopupUi(
             handler.postDelayed(r, AWAKE_SETTLE_MS)
         }
 
-        /** After a send: if not confirmed in a few seconds, wake the app (if enabled) and re-send if still stuck. */
-        fun watch(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
-            val appCtx = ctx.applicationContext
-            if (!com.ershad.directbubbles.core.Prefs.wakeApp(appCtx, c.pkg)) return
-            handler.postDelayed({
-                if (m.confirmedAt != 0L || m.status != ChatMessage.STATUS_OK || m.woke) return@postDelayed
-                m.woke = true
-                // Opens the chat in Instagram underneath the bubble window: its process starts and
-                // OriginOS releases the held reply. Popup stays on top.
-                ReplySender.open(appCtx, c.contentIntent, c.pkg)
-                handler.postDelayed({
-                    if (m.confirmedAt == 0L && m.status == ChatMessage.STATUS_OK && m.autoResends < 2) {
-                        m.autoResends++
-                        m.status = ChatMessage.STATUS_SENDING
-                        queue(appCtx, c, m)
-                        ChatStore.notifyChanged()
-                    }
-                }, 4_000L)
-            }, WAKE_AFTER_MS)
-        }
+        /**
+         * Android gives no way to start another app invisibly: the only way to "wake" Instagram is to
+         * open it on screen, which is not wanted. Stuck replies instead wait and go out automatically
+         * as soon as Instagram is active in the background (see [onAppAwake]).
+         */
+        @Suppress("UNUSED_PARAMETER")
+        fun watch(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {}
 
         /** Sends this chat's waiting replies, one at a time. Called on new notifications and by a timer. */
         fun flushQueued(ctx: android.content.Context, key: String) {

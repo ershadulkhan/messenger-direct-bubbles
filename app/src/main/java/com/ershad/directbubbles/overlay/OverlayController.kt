@@ -137,9 +137,15 @@ object OverlayController {
         val p = popup ?: return
         p.detach {
             val a = app ?: return@detach
-            if (Prefs.bubblesOn(a) && canDraw()) showBubble(false)
+            if (Prefs.bubblesOn(a) && canDraw()) {
+                noPopOnce = true
+                showBubble(false)
+            }
         }
     }
+
+    /** Set when the bubble comes back from a minimize: appear instantly where the heads landed. */
+    private var noPopOnce = false
 
     /** Centre of the floating bubble's resting spot (remembered side / height). */
     private fun homePoint(): android.graphics.Point {
@@ -243,8 +249,11 @@ object OverlayController {
             }
             bubble = v
             bubbleParams = p
-            popIn(v, 0L)
-            followers.forEachIndexed { i, f -> popIn(f.view, 60L * (i + 1)) }
+            if (noPopOnce) noPopOnce = false
+            else {
+                popIn(v, 0L)
+                followers.forEachIndexed { i, f -> popIn(f.view, 60L * (i + 1)) }
+            }
         } else if (animate) {
             popIn(v, 0L)
         }
