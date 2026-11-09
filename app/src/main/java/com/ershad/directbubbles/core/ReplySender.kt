@@ -28,7 +28,12 @@ object ReplySender {
         if (inputs.isEmpty()) return false
         val pi = action.actionIntent ?: return false
         return try {
-            val intent = Intent().addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES or (if (foreground) Intent.FLAG_RECEIVER_FOREGROUND else 0))
+            // REPLACE_PENDING: if an earlier copy of this reply is still held in the queue (app frozen),
+            // the new one replaces it instead of piling up, so automatic retries don't send duplicates.
+            val intent = Intent().addFlags(
+                Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_REPLACE_PENDING or
+                    (if (foreground) Intent.FLAG_RECEIVER_FOREGROUND else 0)
+            )
             val bundle = Bundle()
             for (remoteInput in inputs) {
                 bundle.putCharSequence(remoteInput.resultKey, text)

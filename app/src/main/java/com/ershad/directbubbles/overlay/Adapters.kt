@@ -108,7 +108,7 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
             if (!m.outgoing) return false
             if (m.status == ChatMessage.STATUS_FAILED) return true
             val age = System.currentTimeMillis() - m.time
-            return m.status == ChatMessage.STATUS_OK && age in UNCONFIRMED_AFTER_MS..(10 * 60_000L)
+            return m.status == ChatMessage.STATUS_OK && age > UNCONFIRMED_AFTER_MS
         }
     }
 
@@ -162,10 +162,11 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
                     status.text = "Not sent · tap: retry · hold: send in the app"
                 }
                 // Sent, but the app hasn't confirmed it yet after a while (only for my newest replies).
-                m.status == ChatMessage.STATUS_OK && age in UNCONFIRMED_AFTER_MS..(10 * 60_000L) && isRecentOwn(position) -> {
+                m.status == ChatMessage.STATUS_OK && age > UNCONFIRMED_AFTER_MS && age < 24 * 3_600_000L && isRecentOwn(position) -> {
                     status.visibility = View.VISIBLE
                     status.setTextColor(ctx.getColor(R.color.text_secondary))
-                    status.text = "Waiting for the app · re-sends when it wakes · tap: send now · hold: send in the app"
+                    val tries = if (m.autoResends > 0) " (tried ${m.autoResends + 1}×)" else ""
+                    status.text = "Not delivered yet · retrying automatically$tries · hold: send in the app"
                 }
                 m.status == ChatMessage.STATUS_SENDING && age > 3_000L -> {
                     status.visibility = View.VISIBLE

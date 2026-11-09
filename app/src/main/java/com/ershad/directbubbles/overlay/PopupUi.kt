@@ -544,11 +544,11 @@ class PopupUi(
         }
 
         private const val WAKE_AFTER_MS = 6_000L
-        private const val AWAKE_SETTLE_MS = 5_000L
+        private const val AWAKE_SETTLE_MS = 3_000L
 
         private fun stuck(m: ChatMessage, now: Long): Boolean =
             m.outgoing && m.status == ChatMessage.STATUS_OK && m.sentAt > 0 && m.confirmedAt == 0L &&
-                now - m.sentAt in 10_000L..(30 * 60_000L)
+                now - m.sentAt >= 8_000L && now - m.time < 24 * 3_600_000L
 
         private val awakeRunnables = HashMap<String, Runnable>()
 
@@ -563,27 +563,55 @@ class PopupUi(
             val r = Runnable {
                 awakeRunnables.remove(pkg)
                 val now = System.currentTimeMillis()
+                // The app is running right now (it just posted/cleared a notification): use it.
                 for (c in ChatStore.all().filter { it.pkg == pkg }) {
-                    for (m in c.messages.takeLast(8)) {
-                        if (!stuck(m, now) || m.autoResends >= 2) continue
-                        m.autoResends++
-                        m.status = ChatMessage.STATUS_SENDING
-                        queue(appCtx, c, m)
+                    for (m in c.messages.takeLast(10)) {
+                        if (stuck(m, now)) retryNow(appCtx, c, m)
                     }
                 }
-                ChatStore.notifyChanged()
             }
             awakeRunnables[pkg] = r
             handler.postDelayed(r, AWAKE_SETTLE_MS)
         }
 
+        private val retries = java.util.IdentityHashMap<ChatMessage, Runnable>()
+
+        /** Wait before automatic retry number n: 15s, 30s, 1m, 2m, 5m, then every 10 minutes. */
+        private fun backoff(n: Int): Long = when (n) {
+            0 -> 15_000L
+            1 -> 30_000L
+            2 -> 60_000L
+            3 -> 120_000L
+            4 -> 300_000L
+            else -> 600_000L
+        }
+
+        private fun done(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage): Boolean =
+            m.confirmedAt != 0L || m.status == ChatMessage.STATUS_CONFIRMED || m.status == ChatMessage.STATUS_FAILED ||
+                c.messages.none { it === m } || System.currentTimeMillis() - m.time > 24 * 3_600_000L
+
         /**
-         * Android gives no way to start another app invisibly: the only way to "wake" Instagram is to
-         * open it on screen, which is not wanted. Stuck replies instead wait and go out automatically
-         * as soon as Instagram is active in the background (see [onAppAwake]).
+         * Keeps re-sending an unconfirmed reply, period to period, until Instagram/WhatsApp confirms it
+         * (or 24 h pass). Each retry uses the same reply button with REPLACE_PENDING, so if the phone
+         * is holding an earlier copy, the new one replaces it instead of creating a duplicate.
          */
-        @Suppress("UNUSED_PARAMETER")
-        fun watch(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {}
+        fun watch(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+            val appCtx = ctx.applicationContext
+            retries.remove(m)?.let { handler.removeCallbacks(it) }
+            if (done(c, m)) return
+            val r = Runnable { retryNow(appCtx, c, m) }
+            retries[m] = r
+            handler.postDelayed(r, backoff(m.autoResends))
+        }
+
+        private fun retryNow(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+            retries.remove(m)?.let { handler.removeCallbacks(it) }
+            if (done(c, m)) return
+            m.autoResends++
+            if (sendNow(ctx, c, m, 0) == null) m.status = ChatMessage.STATUS_OK
+            ChatStore.notifyChanged()
+            watch(ctx, c, m)   // schedule the next try (stops by itself once confirmed)
+        }
 
         /** Sends this chat's waiting replies, one at a time. Called on new notifications and by a timer. */
         fun flushQueued(ctx: android.content.Context, key: String) {
@@ -908,7 +936,8 @@ class PopupUi(
     /** Tap on my failed / unconfirmed message: send it again. */
     private fun retry(m: ChatMessage) {
         val c = ChatStore.get(currentKey) ?: return
-        val next = attemptOf(c, m) + 1
+        // Same reply button again (replaces a held copy, no duplicate); only switch buttons if it failed outright.
+        val next = if (m.status == ChatMessage.STATUS_FAILED) attemptOf(c, m) + 1 else 0
         ChatStore.removeMessage(c, m)
         deliver(c, ChatStore.addOutgoing(c, m.text), next)
     }
