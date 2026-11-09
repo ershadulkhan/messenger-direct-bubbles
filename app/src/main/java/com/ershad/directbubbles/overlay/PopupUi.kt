@@ -286,8 +286,18 @@ class PopupUi(
             p.gravity = Gravity.TOP or Gravity.START
             p.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             noClip()
+            // Fade the dim in (instead of switching it on at once, which looked like a flash).
+            root.background?.alpha = 0
+            panel.alpha = 0f
             wm.addView(root, p)
             added = true
+            root.background?.let { bg ->
+                val anim = android.animation.ValueAnimator.ofInt(0, 255)
+                anim.duration = 200
+                anim.addUpdateListener { bg.alpha = it.animatedValue as Int }
+                anim.start()
+            }
+            panel.animate().alpha(1f).setDuration(160).start()
             panel.startAnimation(AnimationUtils.loadAnimation(ctx, R.anim.popup_enter))
             justAdded = true
         }
@@ -330,11 +340,8 @@ class PopupUi(
             } catch (_: Exception) {
             }
             added = false
-            root.background?.alpha = 255
-            root.findViewById<View>(R.id.chat_top_arrow).alpha = 1f
-            for (i in 0 until headsRow.childCount) headsRow.getChildAt(i).apply {
-                translationX = 0f; translationY = 0f; scaleX = 1f; scaleY = 1f
-            }
+            // No resets here: the window is still on screen for a frame after removeView, and putting the
+            // heads / dim back would flash. attach() resets everything before the next open.
             onDone()
         }
     }
