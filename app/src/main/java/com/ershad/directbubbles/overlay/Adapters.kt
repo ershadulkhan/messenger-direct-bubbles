@@ -165,8 +165,7 @@ class ThreadAdapter(private val ctx: Context) : BaseAdapter() {
                 m.status == ChatMessage.STATUS_OK && age > UNCONFIRMED_AFTER_MS && age < 24 * 3_600_000L && isRecentOwn(position) -> {
                     status.visibility = View.VISIBLE
                     status.setTextColor(ctx.getColor(R.color.text_secondary))
-                    val tries = if (m.autoResends > 0) " (tried ${m.autoResends + 1}×)" else ""
-                    status.text = "Not delivered yet · retrying automatically$tries · hold: send in the app"
+                    status.text = "Sent · waiting for the app to wake up · tap: send again (may arrive twice) · hold: send in the app"
                 }
                 m.status == ChatMessage.STATUS_SENDING && age > 3_000L -> {
                     status.visibility = View.VISIBLE

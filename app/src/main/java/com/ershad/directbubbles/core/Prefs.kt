@@ -86,13 +86,6 @@ object Prefs {
         sp(c).edit().putBoolean("hide_orig_$pkg", on).apply()
     }
 
-    /** Re-send a stuck reply automatically as soon as the app shows it is awake again. */
-    fun autoResend(c: Context, pkg: String): Boolean = sp(c).getBoolean("auto_resend_$pkg", true)
-
-    fun setAutoResend(c: Context, pkg: String, on: Boolean) {
-        sp(c).edit().putBoolean("auto_resend_$pkg", on).apply()
-    }
-
     /** Wake the app (open its chat underneath the bubble) when a reply gets stuck. Off unless you turn it on. */
     fun wakeApp(c: Context, pkg: String): Boolean = sp(c).getBoolean("wake_app_$pkg", false)
 

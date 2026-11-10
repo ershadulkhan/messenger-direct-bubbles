@@ -67,8 +67,6 @@ class BubbleNotificationListener : NotificationListenerService() {
                     ChatStore.addActivity(p.item)
                 }
             }
-            // The app just posted something, so it is awake: stuck replies can go out now.
-            if (pkg != packageName) com.ershad.directbubbles.overlay.PopupUi.onAppAwake(this, pkg)
         } catch (t: Throwable) {
             Log.w(TAG, "failed to handle notification", t)
         }
@@ -112,9 +110,6 @@ class BubbleNotificationListener : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification?, rankingMap: RankingMap?, reason: Int) {
         if (sbn == null) return
         try {
-            if (sbn.packageName != packageName && (reason == REASON_APP_CANCEL || reason == REASON_APP_CANCEL_ALL)) {
-                com.ershad.directbubbles.overlay.PopupUi.onAppAwake(this, sbn.packageName)
-            }
             val c: Conversation = ChatStore.onNotificationGone(sbn.key) ?: return
             // The app cleared its notification right after my reply = the reply went through.
             if (reason == REASON_APP_CANCEL || reason == REASON_APP_CANCEL_ALL) ChatStore.confirmRecentReplies(c)

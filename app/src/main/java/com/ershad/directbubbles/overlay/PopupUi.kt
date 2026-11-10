@@ -590,91 +590,27 @@ class PopupUi(
         }
 
         private const val WAKE_AFTER_MS = 6_000L
-        private const val AWAKE_SETTLE_MS = 3_000L
 
-        private fun stuck(m: ChatMessage, now: Long): Boolean =
-            m.outgoing && m.status == ChatMessage.STATUS_OK && m.sentAt > 0 && m.confirmedAt == 0L &&
-                now - m.sentAt >= 8_000L && now - m.time < 24 * 3_600_000L
-
-        private val awakeRunnables = HashMap<String, Runnable>()
+        /*
+         * A reply that was handed to Instagram/WhatsApp is NEVER sent again automatically. OriginOS holds the
+         * reply while the app is frozen and delivers every copy once it wakes (FLAG_RECEIVER_REPLACE_PENDING
+         * does not merge copies held by the phone), so automatic re-sends made the other person receive the
+         * same text 3-4 times. A slow reply is shown as "waiting"; you can tap it to send again on purpose.
+         */
 
         /**
-         * [pkg] posted or cleared a notification, so its process is running. A reply that OriginOS held
-         * back is usually delivered now; give it a few seconds to confirm, then re-send whatever is still stuck.
+         * After a send. Optional (Settings → app → "Wake when a reply is stuck", off by default): if the reply
+         * is still unconfirmed after [WAKE_AFTER_MS], open that chat in the app underneath the bubble so the
+         * phone lets the app run and releases the held reply. It does not send the reply again.
          */
-        fun onAppAwake(ctx: android.content.Context, pkg: String) {
+        fun watch(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
             val appCtx = ctx.applicationContext
-            if (!com.ershad.directbubbles.core.Prefs.autoResend(appCtx, pkg)) return
-            awakeRunnables[pkg]?.let { handler.removeCallbacks(it) }
-            val r = Runnable {
-                awakeRunnables.remove(pkg)
-                val now = System.currentTimeMillis()
-                // The app is running right now (it just posted/cleared a notification): use it.
-                for (c in ChatStore.all().filter { it.pkg == pkg }) {
-                    for (m in c.messages.takeLast(10)) {
-                        if (stuck(m, now)) retryNow(appCtx, c, m)
-                    }
-                }
-            }
-            awakeRunnables[pkg] = r
-            handler.postDelayed(r, AWAKE_SETTLE_MS)
-        }
-
-        private val retries = java.util.IdentityHashMap<ChatMessage, Runnable>()
-
-        /**
-         * Optional (Settings → app → "Wake when a reply is stuck", off by default): if a reply is still
-         * unconfirmed after [WAKE_AFTER_MS], open that chat in the app underneath the bubble so the phone
-         * lets the app run and releases the held reply, then re-send once if it is still stuck.
-         */
-        private fun scheduleWake(appCtx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
             if (m.woke || !com.ershad.directbubbles.core.Prefs.wakeApp(appCtx, c.pkg)) return
             m.woke = true
             handler.postDelayed({
                 if (m.confirmedAt != 0L || m.status != ChatMessage.STATUS_OK) return@postDelayed
                 ReplySender.open(appCtx, c.contentIntent, c.pkg)
-                handler.postDelayed({
-                    if (m.confirmedAt == 0L && m.status == ChatMessage.STATUS_OK) retryNow(appCtx, c, m)
-                }, 4_000L)
             }, WAKE_AFTER_MS)
-        }
-
-        /** Wait before automatic retry number n: 15s, 30s, 1m, 2m, 5m, then every 10 minutes. */
-        private fun backoff(n: Int): Long = when (n) {
-            0 -> 15_000L
-            1 -> 30_000L
-            2 -> 60_000L
-            3 -> 120_000L
-            4 -> 300_000L
-            else -> 600_000L
-        }
-
-        private fun done(c: com.ershad.directbubbles.core.Conversation, m: ChatMessage): Boolean =
-            m.confirmedAt != 0L || m.status == ChatMessage.STATUS_CONFIRMED || m.status == ChatMessage.STATUS_FAILED ||
-                c.messages.none { it === m } || System.currentTimeMillis() - m.time > 24 * 3_600_000L
-
-        /**
-         * Keeps re-sending an unconfirmed reply, period to period, until Instagram/WhatsApp confirms it
-         * (or 24 h pass). Each retry uses the same reply button with REPLACE_PENDING, so if the phone
-         * is holding an earlier copy, the new one replaces it instead of creating a duplicate.
-         */
-        fun watch(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
-            val appCtx = ctx.applicationContext
-            retries.remove(m)?.let { handler.removeCallbacks(it) }
-            if (done(c, m)) return
-            scheduleWake(appCtx, c, m)
-            val r = Runnable { retryNow(appCtx, c, m) }
-            retries[m] = r
-            handler.postDelayed(r, backoff(m.autoResends))
-        }
-
-        private fun retryNow(ctx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
-            retries.remove(m)?.let { handler.removeCallbacks(it) }
-            if (done(c, m)) return
-            m.autoResends++
-            if (sendNow(ctx, c, m, 0) == null) m.status = ChatMessage.STATUS_OK
-            ChatStore.notifyChanged()
-            watch(ctx, c, m)   // schedule the next try (stops by itself once confirmed)
         }
 
         /** Sends this chat's waiting replies, one at a time. Called on new notifications and by a timer. */

@@ -140,7 +140,12 @@ object ChatStore {
                 // The app echoes back replies we sent from the popup (Instagram sometimes as
                 // "username: text"): don't show them twice — mark ours as delivered (✓✓) instead.
                 val bare = stripSenderPrefix(it.text)
+                // A reply the phone held back can echo hours later: match it to my still-unconfirmed reply first.
                 val echo = recent.lastOrNull { m ->
+                    m.outgoing && (m.text == it.text || m.text == bare) && m.confirmedAt == 0L &&
+                        (m.status == ChatMessage.STATUS_OK || m.status == ChatMessage.STATUS_SENDING) &&
+                        it.time >= m.time - 60_000L && it.time - m.time < 24 * 3_600_000L
+                } ?: recent.lastOrNull { m ->
                     m.outgoing && (m.text == it.text || m.text == bare) && abs(m.time - it.time) < 10 * 60_000L
                 }
                 if (echo != null) {

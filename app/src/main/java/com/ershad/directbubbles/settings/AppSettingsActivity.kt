@@ -79,19 +79,6 @@ class AppSettingsActivity : Activity() {
 
         // ----- Reply delivery -----
         list.addView(SettingsUi.section(this, "Reply delivery"))
-        val resendCheck = CheckBox(this)
-        resendCheck.isChecked = Prefs.autoResend(this, pkg)
-        resendCheck.isClickable = false
-        val (resendRow, _) = SettingsUi.row(
-            this, "Re-send stuck replies when $label wakes up",
-            "If a reply isn't confirmed, it waits and goes out again automatically the moment $label is active in the background (it posts or clears a notification).",
-            resendCheck
-        ) {
-            val on = !resendCheck.isChecked
-            resendCheck.isChecked = on
-            Prefs.setAutoResend(this, pkg, on)
-        }
-        list.addView(resendRow)
 
         val wakeCheck = CheckBox(this)
         wakeCheck.isChecked = Prefs.wakeApp(this, pkg)
