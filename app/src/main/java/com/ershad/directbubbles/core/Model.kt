@@ -16,6 +16,8 @@ class ChatMessage(
 ) {
     /** Reply-speed diagnostics (not saved): when handed to the app, when the app confirmed, and by which route. */
     var sentAt: Long = 0L
+    /** When it was handed to the app the FIRST time (sentAt moves on every re-send). */
+    var firstSentAt: Long = 0L
     var confirmedAt: Long = 0L
     var route: String = ""
     /** How many times it was re-sent automatically because the app woke up / was woken. */
@@ -50,6 +52,12 @@ class Conversation(val key: String, val pkg: String, var title: String) {
     var contentIntent: PendingIntent? = null
     /** The app's own "Mark as read" button (used by Auto Mark as Read). */
     var markReadAction: Notification.Action? = null
+
+    /**
+     * Every identifier this person has used (notification keys, shortcut ids). A new notification that
+     * matches any of them goes into this one chat, so one person never gets two heads.
+     */
+    val ids = LinkedHashSet<String>()
 
     /** Keys of this chat's live notifications (to clear them / match removals). In memory only. */
     val notifKeys = LinkedHashSet<String>()

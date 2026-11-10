@@ -43,7 +43,8 @@ object ChatStore {
 
     /** Everything one notification tells us about one conversation. */
     class Batch(
-        val key: String,
+        /** Rewritten by [ingest]/[attachActions] to the key of the chat this person already has. */
+        var key: String,
         val pkg: String,
         val title: String,
         val isGroup: Boolean,
@@ -92,7 +93,13 @@ object ChatStore {
         return convs.values.filter { it.pkg == pkg && normalize(it.title) == t }.maxByOrNull { it.lastTime }
     }
 
-    fun normalize(s: String): String = s.trim().lowercase().replace(Regex("\\s+"), " ")
+    private val INVISIBLE = Regex("[\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\uFEFF]")
+    private val SPACES = Regex("\\s+")
+
+    /** Name used to recognise the same person: ignores case, spacing, invisible marks and fancy fonts (𝙄𝙧𝙨𝙝𝙖𝙙 = Irshad). */
+    fun normalize(s: String): String =
+        INVISIBLE.replace(java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC), "")
+            .trim().lowercase().replace(SPACES, " ")
 
     fun convKeyForNotification(sbnKey: String): String? = notifIndex[sbnKey]
 
@@ -102,10 +109,14 @@ object ChatStore {
 
     /** Adds what a notification contains. Returns how many NEW incoming text messages were added. */
     fun ingest(b: Batch): Int {
-        val c = convs.getOrPut(b.key) { Conversation(b.key, b.pkg, b.title) }
+        val c = resolve(b) ?: Conversation(b.key, b.pkg, b.title).also {
+            it.ids.add(b.key)
+            convs[b.key] = it
+        }
         if (b.title.isNotBlank() && c.title != b.title) {
             c.title = b.title
             touch(c)
+            mergeSameName(c)   // the new name may be a person we already have under another key
         }
         c.isGroup = b.isGroup
         c.simulated = b.simulated
@@ -203,8 +214,98 @@ object ChatStore {
 
     /** Refreshes only the live reply / open / mark-read buttons of a chat (no new messages). */
     fun attachActions(b: Batch) {
-        val c = convs[b.key] ?: return
+        val c = resolve(b) ?: return
         attach(c, b)
+    }
+
+    // ---------------- one chat per person ----------------
+
+    /**
+     * Finds the chat this notification belongs to and points [b] at it. Apps post the same person under
+     * different keys (with and without a shortcut id, renamed...), which used to create two chat heads.
+     * Matching: same key, or any id we have seen for that person, or (1-to-1 chats only) the same name.
+     */
+    private fun resolve(b: Batch): Conversation? {
+        convs[b.key]?.let { return learn(it, b) }
+        var found = convs.values.firstOrNull { it.pkg == b.pkg && b.key in it.ids }
+        if (found == null && !b.isGroup) {
+            val t = normalize(b.title)
+            if (t.isNotEmpty()) {
+                found = convs.values.filter { it.pkg == b.pkg && !it.isGroup && normalize(it.title) == t }
+                    .maxByOrNull { it.lastTime }
+            }
+        }
+        return found?.let { learn(it, b) }
+    }
+
+    private fun learn(c: Conversation, b: Batch): Conversation {
+        if (c.ids.add(b.key)) touch(c)
+        b.key = c.key
+        return c
+    }
+
+    /** Merges every other 1-to-1 chat of the same app that has the same person name into [keep]. */
+    private fun mergeSameName(keep: Conversation) {
+        if (keep.isGroup || keep.simulated) return
+        val t = normalize(keep.title)
+        if (t.isEmpty()) return
+        val others = convs.values.filter { it !== keep && it.pkg == keep.pkg && !it.isGroup && !it.simulated && normalize(it.title) == t }
+        for (o in others) mergeInto(keep, o)
+    }
+
+    /** Moves all of [other] (messages, ids, unread, avatar, live buttons) into [keep] and removes [other]. */
+    private fun mergeInto(keep: Conversation, other: Conversation) {
+        if (keep === other) return
+        for (m in other.messages) {
+            val dup = keep.messages.any {
+                it.outgoing == m.outgoing && it.kind == m.kind && it.text == m.text && it.sender == m.sender &&
+                    abs(it.time - m.time) < 2_000L
+            }
+            if (!dup) keep.messages.add(m)
+        }
+        keep.messages.sortBy { it.time }
+        while (keep.messages.size > MAX_MESSAGES) keep.messages.removeAt(0)
+        keep.seen.addAll(other.seen)
+        while (keep.seen.size > MAX_SEEN) keep.seen.remove(keep.seen.first())
+        keep.ids.add(other.key)
+        keep.ids.addAll(other.ids)
+        keep.unread = maxOf(keep.unread, other.unread)
+        keep.active = keep.active || other.active
+        if (other.lastTime > keep.lastTime) {
+            keep.lastTime = other.lastTime
+            if (other.title.isNotBlank()) keep.title = other.title
+        }
+        if (keep.avatar == null && other.avatar != null) {
+            keep.avatar = other.avatar
+            saveAvatar(keep.key, other.avatar!!)
+        }
+        if (keep.replyAction == null) keep.replyAction = other.replyAction
+        if (keep.contentIntent == null) keep.contentIntent = other.contentIntent
+        if (keep.markReadAction == null) keep.markReadAction = other.markReadAction
+        for (k in other.notifKeys) {
+            keep.notifKeys.add(k)
+            notifIndex[k] = keep.key
+        }
+        convs.remove(other.key)
+        deleteFiles(other.key)
+        touch(keep)
+        notifyChanged()
+    }
+
+    /** Past conversations: joins chats of the same person that were saved separately by older versions. */
+    private fun mergeDuplicates() {
+        val groups = convs.values.filter { !it.isGroup && !it.simulated && normalize(it.title).isNotEmpty() }
+            .groupBy { it.pkg + "\u0000" + normalize(it.title) }
+        var any = false
+        for (list in groups.values) {
+            if (list.size < 2) continue
+            val sorted = list.sortedByDescending { it.lastTime }
+            for (o in sorted.drop(1)) {
+                mergeInto(sorted[0], o)
+                any = true
+            }
+        }
+        if (any) main.postDelayed(saveRunnable, SAVE_DELAY_MS)
     }
 
     private fun attach(c: Conversation, b: Batch) {
@@ -417,6 +518,7 @@ object ChatStore {
                 val af = avatarFile(c.key)
                 if (af.exists()) c.avatar = BitmapFactory.decodeFile(af.path)
             }
+            mergeDuplicates()
             val af = activityFile()
             if (af.baseFile.exists()) {
                 val arr = JSONArray(String(af.readFully(), Charsets.UTF_8))
@@ -456,6 +558,8 @@ object ChatStore {
             }
         }
         o.optJSONArray("seen")?.let { s -> for (j in 0 until s.length()) c.seen.add(s.getString(j)) }
+        c.ids.add(key)
+        o.optJSONArray("ids")?.let { a -> for (j in 0 until a.length()) c.ids.add(a.getString(j)) }
         return c
     }
 
@@ -473,6 +577,7 @@ object ChatStore {
             .put("unread", c.unread).put("last", c.lastTime).put("active", c.active)
             .put("msgs", ms)
             .put("seen", JSONArray(c.seen.toList()))
+            .put("ids", JSONArray(c.ids.toList()))
             .toString()
     }
 

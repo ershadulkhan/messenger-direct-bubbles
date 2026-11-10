@@ -55,6 +55,8 @@ Tip: long-press a chat in the inbox to remove it from this app (it is not delete
 
 - Replies work for messages that arrive with a **Reply** button in the notification. That covers Instagram and WhatsApp DMs and most chat apps.
 - If you clear a chat's notification and later restart the phone, replies for that chat unlock again with the person's next message (Android doesn't let reply actions survive a reboot).
+- **One bubble per person:** the same person always lands in one chat head, even when Instagram/WhatsApp post them under different ids; older duplicate chats are merged automatically.
+- **Instagram replies slow on vivo/OriginOS?** Instagram's Reply button is a broadcast that OriginOS holds while Instagram is frozen. In *Settings → Instagram* use **Let Instagram run in the background** (Autostart, Battery: Unrestricted, background power, lock in Recents). Optional **Wake Instagram when a reply is stuck** (off by default) opens the chat underneath the bubble to release it.
 - **Vivo / OriginOS, Xiaomi, Oppo:** if bubbles stop after a while, go to *App info → Battery* and allow background activity / autostart.
 
 ## Build it yourself

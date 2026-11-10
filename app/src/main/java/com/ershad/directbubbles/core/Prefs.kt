@@ -93,8 +93,8 @@ object Prefs {
         sp(c).edit().putBoolean("auto_resend_$pkg", on).apply()
     }
 
-    /** Wake the app (open its chat underneath the bubble) when a reply gets stuck. On for Instagram. */
-    fun wakeApp(c: Context, pkg: String): Boolean = sp(c).getBoolean("wake_app_$pkg", pkg == "com.instagram.android")
+    /** Wake the app (open its chat underneath the bubble) when a reply gets stuck. Off unless you turn it on. */
+    fun wakeApp(c: Context, pkg: String): Boolean = sp(c).getBoolean("wake_app_$pkg", false)
 
     fun setWakeApp(c: Context, pkg: String, on: Boolean) {
         sp(c).edit().putBoolean("wake_app_$pkg", on).apply()

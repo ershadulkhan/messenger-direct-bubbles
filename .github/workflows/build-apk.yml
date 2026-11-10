@@ -62,8 +62,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "v1.22.${{ github.run_number }}" out/DirectBubbles.apk out/DirectBubbles-debug.apk \
+          gh release create "v1.23.${{ github.run_number }}" out/DirectBubbles.apk out/DirectBubbles-debug.apk \
             --target "${{ github.sha }}" \
             --latest \
-            --title "Direct Bubbles v1.22.${{ github.run_number }}" \
+            --title "Direct Bubbles v1.23.${{ github.run_number }}" \
             --notes "Built automatically from the latest code. On your phone, download **DirectBubbles.apk** below and open it to install or update (it installs over the previous version and keeps your settings)."

@@ -568,6 +568,7 @@ class PopupUi(
             for (a in candidates) {
                 if (ReplySender.send(appCtx, a, m.text, (attempt / all.size) % 2 == 0)) {
                     m.sentAt = System.currentTimeMillis()
+                    if (m.firstSentAt == 0L) m.firstSentAt = m.sentAt
                     m.route = com.ershad.directbubbles.core.NotificationParser.routeOf(a)
                     com.ershad.directbubbles.core.ReplyLog.record(c.pkg, c.title, m, attempt)
                     c.replyAction = a
@@ -621,6 +622,23 @@ class PopupUi(
 
         private val retries = java.util.IdentityHashMap<ChatMessage, Runnable>()
 
+        /**
+         * Optional (Settings → app → "Wake when a reply is stuck", off by default): if a reply is still
+         * unconfirmed after [WAKE_AFTER_MS], open that chat in the app underneath the bubble so the phone
+         * lets the app run and releases the held reply, then re-send once if it is still stuck.
+         */
+        private fun scheduleWake(appCtx: android.content.Context, c: com.ershad.directbubbles.core.Conversation, m: ChatMessage) {
+            if (m.woke || !com.ershad.directbubbles.core.Prefs.wakeApp(appCtx, c.pkg)) return
+            m.woke = true
+            handler.postDelayed({
+                if (m.confirmedAt != 0L || m.status != ChatMessage.STATUS_OK) return@postDelayed
+                ReplySender.open(appCtx, c.contentIntent, c.pkg)
+                handler.postDelayed({
+                    if (m.confirmedAt == 0L && m.status == ChatMessage.STATUS_OK) retryNow(appCtx, c, m)
+                }, 4_000L)
+            }, WAKE_AFTER_MS)
+        }
+
         /** Wait before automatic retry number n: 15s, 30s, 1m, 2m, 5m, then every 10 minutes. */
         private fun backoff(n: Int): Long = when (n) {
             0 -> 15_000L
@@ -644,6 +662,7 @@ class PopupUi(
             val appCtx = ctx.applicationContext
             retries.remove(m)?.let { handler.removeCallbacks(it) }
             if (done(c, m)) return
+            scheduleWake(appCtx, c, m)
             val r = Runnable { retryNow(appCtx, c, m) }
             retries[m] = r
             handler.postDelayed(r, backoff(m.autoResends))

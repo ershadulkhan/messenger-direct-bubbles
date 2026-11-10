@@ -181,7 +181,7 @@ class BubbleNotificationListener : NotificationListenerService() {
                     if (sbn.packageName != conv.pkg) continue
                     val p = NotificationParser.parse(l, sbn) as? Parsed.Chat ?: continue
                     val b = p.batch
-                    if (b.key == conv.key || ChatStore.normalize(b.title) == wanted) {
+                    if (b.key == conv.key || b.key in conv.ids || ChatStore.normalize(b.title) == wanted) {
                         ChatStore.attachActions(b)
                         out.addAll(NotificationParser.allReplyActions(sbn.notification))
                     }
@@ -200,7 +200,7 @@ class BubbleNotificationListener : NotificationListenerService() {
                     if (sbn.packageName != conv.pkg) continue
                     val p = NotificationParser.parse(l, sbn) as? Parsed.Chat ?: continue
                     val b = p.batch
-                    if (b.reply != null && (b.key == conv.key || ChatStore.normalize(b.title) == wanted)) {
+                    if (b.reply != null && (b.key == conv.key || b.key in conv.ids || ChatStore.normalize(b.title) == wanted)) {
                         ChatStore.attachActions(b)
                         return b.reply
                     }

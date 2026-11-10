@@ -93,6 +93,33 @@ class AppSettingsActivity : Activity() {
         }
         list.addView(resendRow)
 
+        val wakeCheck = CheckBox(this)
+        wakeCheck.isChecked = Prefs.wakeApp(this, pkg)
+        wakeCheck.isClickable = false
+        val (wakeRow, _) = SettingsUi.row(
+            this, "Wake $label when a reply is stuck",
+            "Off by default. If a reply isn't confirmed within 6 seconds, $label's chat opens underneath the bubble so the phone lets it run and releases the reply. $label may be open when you minimize.",
+            wakeCheck
+        ) {
+            val on = !wakeCheck.isChecked
+            wakeCheck.isChecked = on
+            Prefs.setWakeApp(this, pkg, on)
+        }
+        list.addView(wakeRow)
+
+        val (bgRow, _) = SettingsUi.row(
+            this, "Let $label run in the background",
+            "Opens $label's App info. On vivo/OriginOS turn on Autostart, set Battery to Unrestricted, allow background power use, and lock it in Recents. Replies reach $label much faster when the phone doesn't freeze it."
+        ) {
+            try {
+                startActivity(
+                    Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$pkg"))
+                )
+            } catch (_: Exception) {
+            }
+        }
+        list.addView(bgRow)
+
 
         val (themeRow, _) = SettingsUi.row(this, "Themes", "Set up the colours and style of the $label chat window") {
             startActivity(Intent(this, ThemeActivity::class.java).putExtra(EXTRA_PKG, pkg))
