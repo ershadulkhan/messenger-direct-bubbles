@@ -17,7 +17,7 @@ android {
         minSdk = 29          // Android 10
         targetSdk = 35       // Android 15 rules; runs on Android 16/17/18+ too
         versionCode = runNumber
-        versionName = "1.24.$runNumber"
+        versionName = "1.25.$runNumber"
     }
 
     signingConfigs {

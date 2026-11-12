@@ -12,6 +12,7 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import com.ershad.directbubbles.R
+import com.ershad.directbubbles.core.ForceVibrate
 import com.ershad.directbubbles.core.Prefs
 import com.ershad.directbubbles.overlay.OverlayController
 
@@ -57,6 +58,24 @@ class PreferencesActivity : Activity() {
             Prefs.closeOnAppLaunch(this)) { Prefs.setCloseOnAppLaunch(this, it) }
         check(list, "Use 24 hours time", "Show message times as 18:12 instead of 06:12 pm",
             Prefs.use24h(this)) { Prefs.setUse24h(this, it) }
+
+        list.addView(SettingsUi.section(this, "Vibration (OriginOS fix)"))
+        check(list, "Force Vibrate in Vibrate mode",
+            "vivo/OriginOS turns Notifications off in Vibrate mode, so WhatsApp/Instagram don't vibrate. Direct Bubbles vibrates for each new message instead. Never in Silent mode or Do Not Disturb.",
+            Prefs.forceVibrate(this)) { Prefs.setForceVibrate(this, it) }
+        check(list, "Continuous vibrate for incoming calls",
+            "Ringtone-like vibration for incoming WhatsApp/Instagram calls; stops when the call is answered, declined or ends (max 45 s)",
+            Prefs.callVibrate(this)) { Prefs.setCallVibrate(this, it) }
+        check(list, "Also vibrate in Ring mode",
+            "Off: in Ring mode the apps vibrate by themselves. Turn on only if they don't.",
+            Prefs.forceVibrateInRing(this)) { Prefs.setForceVibrateInRing(this, it) }
+        val (testRow, testSub) = SettingsUi.row(this, "Test Vibration Now", "Phone is in: ${ForceVibrate.modeLabel(this)}")
+        testRow.setOnClickListener {
+            ForceVibrate.test(this)
+            testSub.text = "Phone is in: ${ForceVibrate.modeLabel(this)} · " +
+                (if (ForceVibrate.allowed(this)) "new messages WILL vibrate" else "new messages will NOT vibrate")
+        }
+        list.addView(testRow)
 
         val spacer = View(this)
         list.addView(spacer, LinearLayout.LayoutParams(1, SettingsUi.dp(this, 32)))

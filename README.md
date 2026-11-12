@@ -45,7 +45,7 @@ Tip: long-press a chat in the inbox to remove it from this app (it is not delete
 
 ## Privacy & battery
 
-- **Permissions used:** notification access and display over other apps (plus optional notifications, only for the Test button). That's all.
+- **Permissions used:** notification access, display over other apps, vibrate (for the OriginOS vibration fix), plus optional notifications, only for the Test button. That's all.
 - **No** internet permission, accessibility service, Shizuku/root, location, background polling or wake locks.
 - **0% CPU while idle.** Android wakes the app only when a notification arrives. Overlay windows exist only while a bubble is on screen.
 - Messages never leave the phone. They are stored in the app's private storage (a small JSON file).
@@ -57,6 +57,7 @@ Tip: long-press a chat in the inbox to remove it from this app (it is not delete
 - If you clear a chat's notification and later restart the phone, replies for that chat unlock again with the person's next message (Android doesn't let reply actions survive a reboot).
 - **One bubble per person:** the same person always lands in one chat head, even when Instagram/WhatsApp post them under different ids; older duplicate chats are merged automatically.
 - **Instagram replies slow on vivo/OriginOS?** Instagram's Reply button is a broadcast that OriginOS holds while Instagram is frozen. In *Settings → Instagram* use **Let Instagram run in the background** (Autostart, Battery: Unrestricted, background power, lock in Recents). Optional **Wake Instagram when a reply is stuck** (off by default) opens the chat underneath the bubble to release it. A reply that was handed to the app is never re-sent automatically (the phone delivers every held copy when the app wakes, so re-sends made people receive the same text several times); tap a waiting reply to send it again on purpose.
+- **No vibration in Vibrate mode (vivo/OriginOS)?** OriginOS turns Notifications off in Vibrate mode, so WhatsApp/Instagram stay silent. *Settings → Preference → Vibration (OriginOS fix)*: **Force Vibrate in Vibrate mode** (on by default) vibrates for each new message, **Continuous vibrate for incoming calls** buzzes like a ringtone until the call is answered or ends, and **Test Vibration Now** checks it. It never vibrates in Silent mode or Do Not Disturb.
 - **Vivo / OriginOS, Xiaomi, Oppo:** if bubbles stop after a while, go to *App info → Battery* and allow background activity / autostart.
 
 ## Build it yourself

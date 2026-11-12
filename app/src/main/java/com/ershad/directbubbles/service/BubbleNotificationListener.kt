@@ -7,6 +7,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.ershad.directbubbles.core.ChatStore
+import com.ershad.directbubbles.core.ForceVibrate
 import com.ershad.directbubbles.core.Conversation
 import com.ershad.directbubbles.core.NotificationParser
 import com.ershad.directbubbles.core.Parsed
@@ -59,6 +60,11 @@ class BubbleNotificationListener : NotificationListenerService() {
         try {
             val pkg = sbn.packageName
             if (!isWanted(pkg)) return            // ignore every other app immediately (cheap)
+            // Incoming call: ringtone-like vibration (OriginOS Vibrate-mode fix); stops when it is answered/ends.
+            val n = sbn.notification
+            if (n != null && n.category == Notification.CATEGORY_CALL) {
+                if (ForceVibrate.isRingingCall(n)) ForceVibrate.callStart(this, sbn.key) else ForceVibrate.callEnd(sbn.key)
+            }
             when (val p = NotificationParser.parse(this, sbn) ?: return) {
                 is Parsed.Chat -> onChat(sbn, p)
                 is Parsed.Call -> onCall(p)
@@ -80,6 +86,7 @@ class BubbleNotificationListener : NotificationListenerService() {
         // Replies typed while this chat had no reply button go out now.
         if (batch.reply != null) com.ershad.directbubbles.overlay.PopupUi.flushQueued(this, batch.key)
         if (added > 0) {
+            ForceVibrate.message(this, batch.pkg)
             OverlayController.init(this)
             OverlayController.onNewMessages(batch.key)
             // "Clear notifications on appear" (global) or per-app "Bubble only".
@@ -109,6 +116,7 @@ class BubbleNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?, rankingMap: RankingMap?, reason: Int) {
         if (sbn == null) return
+        ForceVibrate.callEnd(sbn.key)   // a ringing call was answered / declined / missed
         try {
             val c: Conversation = ChatStore.onNotificationGone(sbn.key) ?: return
             // The app cleared its notification right after my reply = the reply went through.

@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- The ONLY permissions this app uses. No INTERNET, no foreground-service notification, no accessibility, no location, no wake locks. -->
+    <!-- The only permissions this app uses. No INTERNET, no foreground-service notification, no accessibility, no location, no wake locks. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- "Force vibrate in Vibrate mode" (OriginOS fix): vibrates the motor for new messages/calls. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Lets the app see installed launcher apps (for the app picker and app badges). -->
     <queries>

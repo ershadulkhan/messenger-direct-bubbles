@@ -86,6 +86,27 @@ object Prefs {
         sp(c).edit().putBoolean("hide_orig_$pkg", on).apply()
     }
 
+    /** Vibrate the motor ourselves for new messages/calls when the phone is in Vibrate mode (OriginOS fix). */
+    fun forceVibrate(c: Context): Boolean = sp(c).getBoolean("force_vibrate", true)
+
+    fun setForceVibrate(c: Context, on: Boolean) {
+        sp(c).edit().putBoolean("force_vibrate", on).apply()
+    }
+
+    /** Also force-vibrate in Ring mode (off: the apps vibrate by themselves there). */
+    fun forceVibrateInRing(c: Context): Boolean = sp(c).getBoolean("force_vibrate_ring", false)
+
+    fun setForceVibrateInRing(c: Context, on: Boolean) {
+        sp(c).edit().putBoolean("force_vibrate_ring", on).apply()
+    }
+
+    /** Ringtone-like continuous vibration for incoming WhatsApp/Instagram calls. */
+    fun callVibrate(c: Context): Boolean = sp(c).getBoolean("call_vibrate", true)
+
+    fun setCallVibrate(c: Context, on: Boolean) {
+        sp(c).edit().putBoolean("call_vibrate", on).apply()
+    }
+
     /** Wake the app (open its chat underneath the bubble) when a reply gets stuck. Off unless you turn it on. */
     fun wakeApp(c: Context, pkg: String): Boolean = sp(c).getBoolean("wake_app_$pkg", false)
 
