@@ -61,6 +61,64 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refreshStatus()
+        buildAppChats()
+    }
+
+    /**
+     * One button per chat app (Instagram, WhatsApp...): opens that app's chat list in the bubble window
+     * straight away, even after every chat head was dragged to the X.
+     */
+    private fun buildAppChats() {
+        val row = findViewById<LinearLayout>(R.id.app_chats) ?: return
+        row.removeAllViews()
+        com.ershad.directbubbles.core.ChatStore.init(this)
+        val order = listOf("com.instagram.android", "com.whatsapp", "com.whatsapp.w4b")
+        val enabled = Prefs.enabledApps(this)
+        val pkgs = LinkedHashSet<String>()
+        for (p in order) if (p in enabled) pkgs.add(p)
+        for (c in com.ershad.directbubbles.core.ChatStore.all()) if (!c.simulated && c.pkg in enabled) pkgs.add(c.pkg)
+        val d = resources.displayMetrics.density
+        for (pkg in pkgs) {
+            val installed = try { packageManager.getApplicationInfo(pkg, 0); true } catch (_: Exception) { false }
+            if (!installed) continue
+            val unread = com.ershad.directbubbles.core.ChatStore.all().filter { it.pkg == pkg }.sumOf { it.unread }
+            val btn = LinearLayout(this)
+            btn.orientation = LinearLayout.HORIZONTAL
+            btn.gravity = Gravity.CENTER_VERTICAL
+            val bg = GradientDrawable()
+            bg.cornerRadius = 22 * d
+            bg.setColor(getColor(R.color.surface))
+            bg.setStroke((1 * d).toInt(), getColor(R.color.text_secondary) and 0x33FFFFFF)
+            btn.background = bg
+            btn.setPadding((10 * d).toInt(), (7 * d).toInt(), (14 * d).toInt(), (7 * d).toInt())
+            val icon = ImageView(this)
+            icon.setImageBitmap(com.ershad.directbubbles.core.AppIcons.badge(this, pkg))
+            btn.addView(icon, LinearLayout.LayoutParams((26 * d).toInt(), (26 * d).toInt()))
+            val label = TextView(this)
+            val name = com.ershad.directbubbles.core.AppIcons.label(this, pkg)
+            label.text = if (unread > 0) "$name chats · $unread" else "$name chats"
+            label.setTextColor(getColor(R.color.text_primary))
+            label.textSize = 14f
+            label.setPadding((8 * d).toInt(), 0, 0, 0)
+            btn.addView(label)
+            btn.contentDescription = "Open $name chats"
+            btn.setOnClickListener { openAppChats(pkg) }
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.marginStart = (5 * d).toInt()
+            lp.marginEnd = (5 * d).toInt()
+            row.addView(btn, lp)
+        }
+    }
+
+    private fun openAppChats(pkg: String) {
+        if (!Settings.canDrawOverlays(this)) {
+            toast("Allow \"Display over other apps\" first")
+            startActivity(Intent(this, PermissionsActivity::class.java))
+            return
+        }
+        OverlayController.init(this)
+        com.ershad.directbubbles.overlay.PopupUi.unhidePlatform(pkg)
+        OverlayController.openPopup(null, inboxPkg = pkg)
     }
 
     @Suppress("DEPRECATION")

@@ -41,7 +41,9 @@ Dark mode uses true **AMOLED black** by default.
 
 **Closing one chat head:** in the popup, drag a person's head (top row) down onto the **X**. Dragging the floating head onto the X closes all of them.
 
-Tip: long-press a chat in the inbox to remove it from this app (it is not deleted from Instagram/WhatsApp).
+**Open one app's chats from the app:** the Home screen has an **Instagram chats** / **WhatsApp chats** button (with the unread count). It opens that app's chat list in the bubble window, even after you dragged every chat head to the X.
+
+**Delete a chat:** in the inbox, swipe a chat to the left (or hold it and swipe left). The chat, all its messages and its notification are removed from Direct Bubbles (not from Instagram/WhatsApp). When that person writes again, the chat starts fresh with only the new message.
 
 ## Privacy & battery
 

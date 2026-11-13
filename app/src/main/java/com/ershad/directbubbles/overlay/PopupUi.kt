@@ -162,13 +162,7 @@ class PopupUi(
         tabChats.setOnClickListener { showingActivity = false; refresh() }
         tabActivity.setOnClickListener { showingActivity = true; refresh() }
         tabClear.setOnClickListener { currentInboxPkg?.let { ChatStore.clearActivity(it) } }
-        inboxList.setOnItemLongClickListener { _, _, position, _ ->
-            if (showingActivity) return@setOnItemLongClickListener false
-            val c = inboxAdapter.getItem(position)
-            ChatStore.delete(c.key)
-            Toast.makeText(ctx.applicationContext, "Removed chat with ${c.title} from this app", Toast.LENGTH_SHORT).show()
-            true
-        }
+        setupSwipeToDelete()
 
         // Keep the panel clear of the status bar, navigation bar and keyboard.
         root.setOnApplyWindowInsetsListener { v, insets ->
@@ -176,6 +170,75 @@ class PopupUi(
             v.setPadding(0, top, 0, bottom)
             insets
         }
+    }
+
+    /**
+     * Swipe a chat to the left (or hold it, then swipe left) to delete it: the chat, all of its messages
+     * and its notification are removed. When that person writes again, the chat starts fresh.
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun setupSwipeToDelete() {
+        val slop = android.view.ViewConfiguration.get(ctx).scaledTouchSlop
+        var downX = 0f
+        var downY = 0f
+        var row: View? = null
+        var pos = -1
+        var swiping = false
+        inboxList.setOnTouchListener { _, e ->
+            if (showingActivity) return@setOnTouchListener false
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = e.x; downY = e.y; swiping = false
+                    pos = inboxList.pointToPosition(e.x.toInt(), e.y.toInt())
+                    row = if (pos >= 0) inboxList.getChildAt(pos - inboxList.firstVisiblePosition) else null
+                    false
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val r = row ?: return@setOnTouchListener false
+                    val dx = e.x - downX
+                    val dy = e.y - downY
+                    if (!swiping && dx < -slop * 2 && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
+                        swiping = true
+                        inboxList.requestDisallowInterceptTouchEvent(true)
+                        // Cancel the tap / long-press the list was tracking.
+                        val cancel = android.view.MotionEvent.obtain(e)
+                        cancel.action = android.view.MotionEvent.ACTION_CANCEL
+                        inboxList.onTouchEvent(cancel)
+                        cancel.recycle()
+                    }
+                    if (swiping) {
+                        val x = minOf(0f, dx)
+                        r.translationX = x
+                        r.alpha = 1f - minOf(0.7f, -x / r.width)
+                        true
+                    } else false
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    val r = row
+                    row = null
+                    if (!swiping || r == null) return@setOnTouchListener false
+                    swiping = false
+                    val c = if (pos in 0 until inboxAdapter.count) inboxAdapter.getItem(pos) else null
+                    if (c != null && e.actionMasked == android.view.MotionEvent.ACTION_UP && r.translationX < -r.width * 0.33f) {
+                        r.animate().translationX(-r.width.toFloat()).alpha(0f).setDuration(160).withEndAction {
+                            r.translationX = 0f
+                            r.alpha = 1f
+                            deleteChat(c)
+                        }.start()
+                    } else {
+                        r.animate().translationX(0f).alpha(1f).setDuration(160).start()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun deleteChat(c: com.ershad.directbubbles.core.Conversation) {
+        if (!c.simulated) BubbleNotificationListener.cancel(ArrayList(c.notifKeys))
+        ChatStore.forget(c.key)
+        Toast.makeText(ctx.applicationContext, "Deleted chat with ${c.title}. A new message starts it fresh.", Toast.LENGTH_SHORT).show()
     }
 
     @Suppress("DEPRECATION")

@@ -56,7 +56,9 @@ object ChatStore {
         val markRead: Notification.Action? = null,
         /** StatusBarNotification.key of the source notification. */
         val sbnKey: String? = null,
-    )
+    ) {
+        fun withItems(list: List<Item>) = Batch(key, pkg, title, isGroup, simulated, avatar, list, reply, content, markRead, sbnKey)
+    }
 
     private val convs = HashMap<String, Conversation>()
     private val activity = ArrayList<ActivityItem>()
@@ -108,11 +110,19 @@ object ChatStore {
     }
 
     /** Adds what a notification contains. Returns how many NEW incoming text messages were added. */
-    fun ingest(b: Batch): Int {
+    fun ingest(b0: Batch): Int {
+        // A chat you deleted starts fresh: anything the app re-sends from before the deletion is ignored.
+        val cut = deletedAt(b0)
+        val b = if (cut > 0L) b0.withItems(b0.items.filter { it.time > cut }) else b0
+        if (cut > 0L && b.items.isEmpty() && resolve(b) == null) {
+            b0.key = b.key
+            return 0
+        }
         val c = resolve(b) ?: Conversation(b.key, b.pkg, b.title).also {
             it.ids.add(b.key)
             convs[b.key] = it
         }
+        b0.key = c.key
         if (b.title.isNotBlank() && c.title != b.title) {
             c.title = b.title
             touch(c)
@@ -376,6 +386,78 @@ object ChatStore {
         if (any) notifyChanged()
     }
 
+    // ---------------- deleted chats (start fresh) ----------------
+
+    private class Tomb(val pkg: String, val name: String, val ids: Set<String>, val at: Long)
+
+    private val tombs = ArrayList<Tomb>()
+    private const val MAX_TOMBS = 300
+    private const val TOMB_DAYS = 60L
+
+    /** Deletes a chat and everything in it; when this person writes again, the chat starts empty. */
+    fun forget(key: String) {
+        val c = convs[key] ?: return
+        val ids = HashSet(c.ids)
+        ids.add(c.key)
+        val name = if (c.isGroup) "" else normalize(c.title)
+        tombs.removeAll { t -> t.pkg == c.pkg && (t.ids.any { it in ids } || (name.isNotEmpty() && t.name == name)) }
+        tombs.add(Tomb(c.pkg, name, ids, System.currentTimeMillis()))
+        while (tombs.size > MAX_TOMBS) tombs.removeAt(0)
+        saveTombs()
+        for (k in c.notifKeys) notifIndex.remove(k)
+        delete(key)
+    }
+
+    /** When this person's chat was deleted (0 = never). */
+    private fun deletedAt(b: Batch): Long {
+        if (tombs.isEmpty()) return 0L
+        val name = if (b.isGroup) "" else normalize(b.title)
+        return tombs.filter { t ->
+            t.pkg == b.pkg && (b.key in t.ids || (name.isNotEmpty() && t.name == name))
+        }.maxOfOrNull { it.at } ?: 0L
+    }
+
+    private fun tombFile() = AtomicFile(File(dir(), "deleted.json"))
+
+    private fun saveTombs() {
+        if (app == null) return
+        val arr = JSONArray()
+        for (t in tombs) arr.put(JSONObject().put("pkg", t.pkg).put("name", t.name).put("at", t.at).put("ids", JSONArray(t.ids.toList())))
+        val text = arr.toString()
+        val f = tombFile()
+        io.execute {
+            var out: FileOutputStream? = null
+            try {
+                val st = f.startWrite()
+                out = st
+                st.write(text.toByteArray(Charsets.UTF_8))
+                f.finishWrite(st)
+            } catch (e: Exception) {
+                if (out != null) f.failWrite(out)
+                Log.w(TAG, "save deleted failed", e)
+            }
+        }
+    }
+
+    private fun loadTombs() {
+        try {
+            val f = tombFile()
+            if (!f.baseFile.exists()) return
+            val arr = JSONArray(String(f.readFully(), Charsets.UTF_8))
+            val oldest = System.currentTimeMillis() - TOMB_DAYS * 24 * 3_600_000L
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val at = o.optLong("at")
+                if (at < oldest) continue
+                val ids = HashSet<String>()
+                o.optJSONArray("ids")?.let { a -> for (j in 0 until a.length()) ids.add(a.getString(j)) }
+                tombs.add(Tomb(o.getString("pkg"), o.optString("name"), ids, at))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "load deleted failed", e)
+        }
+    }
+
     fun delete(key: String) {
         if (convs.remove(key) != null) {
             deleteFiles(key)
@@ -524,6 +606,7 @@ object ChatStore {
                 if (af.exists()) c.avatar = BitmapFactory.decodeFile(af.path)
             }
             mergeDuplicates()
+            loadTombs()
             val af = activityFile()
             if (af.baseFile.exists()) {
                 val arr = JSONArray(String(af.readFully(), Charsets.UTF_8))

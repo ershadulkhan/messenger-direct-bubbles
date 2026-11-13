@@ -91,6 +91,15 @@
             android:textColor="@color/text_primary"
             android:textSize="13sp" />
 
+        <!-- Open one app's chat list directly (Instagram chats, WhatsApp chats...) -->
+        <LinearLayout
+            android:id="@+id/app_chats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="18dp"
+            android:orientation="horizontal" />
+
         <!-- Tiles -->
         <GridLayout
             android:id="@+id/tiles"
