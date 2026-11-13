@@ -562,6 +562,7 @@ class PopupUi(
             val fresh = BubbleNotificationListener.freshRepliesFor(c)
             val all = (fresh + listOfNotNull(c.replyAction)).distinctBy { it.actionIntent }
             if (all.isEmpty()) return "none"
+            com.ershad.directbubbles.core.AppWaker.wake(appCtx, c.pkg)
             val r = attempt % all.size
             val candidates = all.drop(r) + all.take(r)
             attempts[keyOf(c, m)] = attempt
@@ -572,6 +573,11 @@ class PopupUi(
                     m.route = com.ershad.directbubbles.core.NotificationParser.routeOf(a)
                     com.ershad.directbubbles.core.ReplyLog.record(c.pkg, c.title, m, attempt)
                     c.replyAction = a
+                    // If the phone is still holding the reply because the app is frozen, wake it again
+                    // (never re-sends: the held reply itself is what gets delivered).
+                    for (d in longArrayOf(1_500L, 5_000L, 15_000L)) handler.postDelayed({
+                        if (m.confirmedAt == 0L && m.status == ChatMessage.STATUS_OK) com.ershad.directbubbles.core.AppWaker.wake(appCtx, c.pkg)
+                    }, d)
                     return null
                 }
             }
@@ -753,6 +759,8 @@ class PopupUi(
         currentKey = key
         onFocus?.invoke(key, null)
         ChatStore.get(key)?.active = true   // opening a chat gives it a chat head (like Messenger)
+        // Thaw the app while you type, so the reply is delivered the moment you press send.
+        ChatStore.get(key)?.let { com.ershad.directbubbles.core.AppWaker.wake(ctx, it.pkg) }
         inboxContainer.visibility = View.GONE
         threadContainer.visibility = View.VISIBLE
         if (switching) {
