@@ -118,15 +118,23 @@ class BubbleNotificationListener : NotificationListenerService() {
         if (sbn == null) return
         ForceVibrate.callEnd(sbn.key)   // a ringing call was answered / declined / missed
         try {
-            val c: Conversation = ChatStore.onNotificationGone(sbn.key) ?: return
+            // Which chat was it? Normally known from the notification key; if Direct Bubbles was restarted
+            // since the notification arrived, work it out from the removed notification itself.
+            val c: Conversation = ChatStore.onNotificationGone(sbn.key)
+                ?: (if (isWanted(sbn.packageName)) (NotificationParser.parse(this, sbn) as? Parsed.Chat)?.let { ChatStore.find(it.batch) } else null)
+                ?: return
+            c.notifKeys.remove(sbn.key)
+            val openedApp = reason == REASON_CLICK || reason == REASON_APP_CANCEL || reason == REASON_APP_CANCEL_ALL
             // The app cleared its notification right after my reply = the reply went through.
             if (reason == REASON_APP_CANCEL || reason == REASON_APP_CANCEL_ALL) ChatStore.confirmRecentReplies(c)
+            // You opened this chat in Instagram/WhatsApp (the app clears the chat's notification when you read
+            // it, or you tapped the notification): it is read there, so clear the unread count here too.
+            if (openedApp && sbn.packageName != packageName) ChatStore.markRead(c)
             if (c.notifKeys.isNotEmpty()) return   // the chat still has another live notification
-            // "Clear unread badge with notification": read it elsewhere -> reset our counter.
+            // "Clear unread badge with notification": also when you swipe the notification away.
             if (Prefs.clearUnreadWithNotif(this)) ChatStore.markRead(c)
             // "Close ChatHeads on app launch": the app cleared its own notification (you opened it)
             // or you tapped the notification -> close that person's chat head.
-            val openedApp = reason == REASON_CLICK || reason == REASON_APP_CANCEL || reason == REASON_APP_CANCEL_ALL
             if (Prefs.closeOnAppLaunch(this) && openedApp) {
                 OverlayController.closeChat(c.key, clearNotifications = false)
             }

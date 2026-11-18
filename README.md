@@ -43,6 +43,8 @@ Dark mode uses true **AMOLED black** by default.
 
 **Open one app's chats from the app:** the Home screen has an **Instagram chats** / **WhatsApp chats** button (with the unread count). It opens that app's chat list in the bubble window, even after you dragged every chat head to the X.
 
+**Read it in Instagram/WhatsApp = read here too:** when you open a chat in the Instagram or WhatsApp app (or tap its notification), that app clears the chat's notification, and Direct Bubbles clears that chat's unread count. (If you swipe a notification away without opening it, the count stays, unless *Clear unread badge with notification* is on.)
+
 **Delete a chat:** in the inbox, swipe a chat to the left (or hold it and swipe left). The chat, all its messages and its notification are removed from Direct Bubbles (not from Instagram/WhatsApp). When that person writes again, the chat starts fresh with only the new message.
 
 ## Privacy & battery

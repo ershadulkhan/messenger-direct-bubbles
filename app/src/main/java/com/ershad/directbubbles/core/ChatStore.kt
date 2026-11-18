@@ -253,6 +253,16 @@ object ChatStore {
         return found?.let { learn(it, b) }
     }
 
+    /** The chat a notification belongs to, without changing anything (null = none yet). */
+    fun find(b: Batch): Conversation? {
+        convs[b.key]?.let { return it }
+        convs.values.firstOrNull { it.pkg == b.pkg && b.key in it.ids }?.let { return it }
+        if (b.isGroup) return null
+        val t = normalize(b.title)
+        if (t.isEmpty()) return null
+        return convs.values.filter { it.pkg == b.pkg && !it.isGroup && normalize(it.title) == t }.maxByOrNull { it.lastTime }
+    }
+
     private fun learn(c: Conversation, b: Batch): Conversation {
         if (c.ids.add(b.key)) touch(c)
         b.key = c.key
